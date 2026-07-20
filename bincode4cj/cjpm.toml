@@ -1,0 +1,18 @@
+[package]
+name = "bincode4cj"
+version = "0.1.0"
+description = "Binary serialization / deserialization library (bincode port to Cangjie)"
+cjc-version = "1.0.5"
+output-type = "static"
+
+# 编译选项
+[compiler]
+emit-mir = false
+opt-level = "none"
+
+# 目标平台
+target = "darwin_aarch64_cjnative"
+
+# 测试配置
+[test]
+framework = "std.unittest"

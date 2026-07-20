@@ -1,0 +1,15 @@
+# 上游仓库开源信息
+
+## bincode
+
+- **仓库**: https://github.com/bincode-org/bincode
+- **版本**: 2.0.1
+- **协议**: MIT
+- **描述**: A binary serialization / deserialization strategy for transforming structs into bytes and vice versa!
+- **原始仓库许可**: MIT License
+
+本仓库（bincode4cj）是 bincode 的仓颉语言迁移版本，遵循 MIT 协议进行二次分发。
+
+## 许可说明
+
+bincode4cj 基于 MIT 协议开源，与上游 bincode 项目保持一致。完整协议见 [LICENSE](./LICENSE)。

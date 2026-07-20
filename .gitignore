@@ -1,0 +1,39 @@
+# === macOS ===
+.DS_Store
+
+# === IDE ===
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# === External dependencies (not part of the project) ===
+.agents/
+bincode/
+cangjie1.0.5/
+harness/
+
+# === Working files ===
+prompt
+skills-lock.json
+build.sh
+
+# === Cangjie build output ===
+bincode4cj/target/
+bincode4cj/.cjpm/
+bincode4cj/cjpm.lock
+
+# === Coverage data ===
+cov_output/
+coverage_output/
+bincode4cj/cov_output/
+bincode4cj/coverage_output/
+bincode4cj/0-std.testrunner.gcda
+*.gcda
+*.gcno
+
+# === Review / doc artifacts at repo root ===
+coverage_report.md
+harness_review.md
+migration_coverage.md
+ood_design.md
