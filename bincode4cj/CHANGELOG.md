@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.14.0 (2026-07-22)
+
+### 新增
+- **派生宏包**：`bincode4cj-derive` 宏包，提供 `@deriveEncode` / `@deriveDecode`（支持 class struct 和 enum，含多参构造器）
+- **新增 13 个测试文件**：`derive_test`、`migration_test`、`branch_coverage_test`、`builtins_branch_test`、`collection_decode_test`、`coverage_test`、`decode_branch_test`、`tuple_branch_test`、`tuple_full_branch_test`、`varint_be_test`、`char_test`、`config_test`、`conv_test`
+- **迁移评估报告**：`rust->cangjie.md`，逐行验证 Rust ↔ 仓颉功能对应关系，迁移率 98.3%
+- **cjcov 覆盖率报告**：`doc/cjcov/coverage_report.md`
+
+### 改进
+- 核心编解码模块增强：`encode.cj`、`decode.cj`、`varint.cj`、`impl_interface.cj` 新增多项接口实现
+- `builtins.cj`：扩展包装类型体系，新增 `BoxedStr`/`BoxedSlice`/`RefCountedStr`/`AtomicRefCountedStr`、`NonZeroI128`/`NonZeroIsize`、`SystemTime_` 等
+- `uint128.cj`：新增 `Int128` 有符号 128 位整数类型及 zigzag 编解码
+- `error.cj`：补充 `InvalidSystemTime`、`CStringNulError` 等错误变体
+
+### 测试
+- 全部测试通过，0 失败，0 错误
+
 ## 0.13.0 (2026-07-20)
 
 ### 测试改进

@@ -25,15 +25,15 @@ bincode4cj/cjpm.lock
 
 # === Coverage data ===
 cov_output/
-coverage_output/
+
 bincode4cj/cov_output/
-bincode4cj/coverage_output/
+
 bincode4cj/0-std.testrunner.gcda
 *.gcda
 *.gcno
 *.gcov
 # === Review / doc artifacts at repo root ===
-coverage_report.md
+
 harness_review.md
 migration_coverage.md
 ood_design.md
