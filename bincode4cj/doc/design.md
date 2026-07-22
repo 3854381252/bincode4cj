@@ -1,4 +1,4 @@
-# bincode4cj — 设计文档
+# bincode4cj - 设计文档
 
 ## 概述
 
@@ -7,29 +7,32 @@ bincode4cj 是 Rust 序列化库 [bincode 2.0.1](https://github.com/bincode-org/
 ## 架构
 
 ```
-bincode4cj
-├── config.cj           # 配置系统：字节序、整数编码、字节限制
-├── error.cj            # 错误类型 + 自定义 MyResult
-├── conv.cj             # 类型转换辅助函数（40+ 函数，167 行）
-├── varint.cj           # Varint 变长整数编解码 + 读写辅助（LE/BE）
-├── encode.cj           # 编码函数（基本类型、容器、HashSet、元组、VecWriter、Path、网络地址、DateTime）
-├── decode.cj           # 解码函数（基本类型、容器、HashSet、元组、Path、网络地址、DateTime）
-├── atomic.cj           # 原子类型编码（AtomicBool, AtomicUInt*, AtomicInt*）
-├── uint128.cj          # 自定义 128 位无符号整数（两个 UInt64 实现）
-├── serde_interface.cj  # Serialize/Deserialize 接口
-├── serde_compat.cj     # Compat 包装器（serde → Encode 桥接）
-├── impl_std.cj         # IoReader/IoWriter 适配器（InputStream/OutputStream）
-├── interface.cj        # Encode/Decode 接口定义
-└── lib.cj              # 顶层 API（encode_into_slice/writer, decode_from_slice/reader）
+bincode4cj（15 个生产文件，3897 行）
+├── interface.cj        # Encode/Decode 接口定义（10 行）
+├── serde_interface.cj  # Serialize/Deserialize 接口（12 行）
+├── serde_compat.cj     # Compat 包装器（serde -> Encode 桥接）（24 行）
+├── impl_std.cj         # IoReader/IoWriter 适配器（InputStream/OutputStream）（39 行）
+├── config.cj           # 配置系统：字节序、整数编码、字节限制（48 行）
+├── lib.cj              # 顶层 API（encode_into_slice/writer, decode_from_slice/reader）（62 行）
+├── error.cj            # 错误类型 + 自定义 MyResult（116 行）
+├── atomic.cj           # 原子类型编码（AtomicBool, AtomicUInt*, AtomicInt*）（127 行）
+├── uint128.cj          # 自定义 128 位无符号整数（两个 UInt64 实现）（132 行）
+├── conv.cj             # 类型转换辅助函数（40+ 函数，160 行）
+├── encode.cj           # 编码函数（基本类型、容器、HashSet、元组、VecWriter、SizeWriter、Path、网络地址、DateTime）（399 行）
+├── builtins.cj         # 自建包装类型（Boxed/RefCounted/Cow/NonZero/Mutex 等）（518 行）
+├── varint.cj           # Varint 变长整数编解码 + 读写辅助（LE/BE）（520 行）
+├── impl_interface.cj   # 接口扩展实现（extend Encode/Decode 到标准类型）（642 行）
+├── decode.cj           # 解码函数（基本类型、容器、HashSet、元组、Path、网络地址、DateTime）（1088 行）
+└── bincode4cj-derive/  # derive 宏实现（derive.cj 220 行，@deriveEncode/@deriveDecode，支持 class + enum）
 
-src/test/               # 测试文件（19 测试类，391 用例）
+src/test/               # 测试文件（28 文件，957 用例）
 ├── config_test.cj      # 配置系统测试
 ├── error_test.cj       # 错误类型测试
 ├── builtins_test.cj    # 自建包装类型测试
 ├── atomic_test.cj      # 原子类型测试
 ├── lib_test.cj         # 顶层 API 测试
 ├── uint128_test.cj     # UInt128 测试
-├── conv_test.cj       # 类型转换测试
+├── conv_test.cj        # 类型转换测试
 ├── diag_test.cj        # 诊断测试
 ├── roundtrip_test.cj   # 完整往返测试
 ├── component_test.cj   # 组件测试
@@ -41,6 +44,10 @@ src/test/               # 测试文件（19 测试类，391 用例）
 ├── encode_comprehensive_test.cj # 编码全面测试
 ├── impl_std_test.cj    # IoReader/IoWriter 测试
 ├── serde_compat_test.cj # Serde 兼容层测试
+├── varint_be_test.cj   # Varint 大端编解码测试
+├── collection_decode_test.cj # 集合类型 Decode 测试
+├── coverage_test.cj    # 覆盖率补充测试
+├── derive_test.cj      # derive 宏测试
 └── ...
 ```
 
@@ -54,7 +61,7 @@ Cangjie 1.0.5 不支持 `impl` 块和 `&T` 引用参数，因此采用函数式 
 // 编码：值 + 配置 + 缓冲区
 public func encode_u32(val: UInt32, config: Config, buf: ArrayList<UInt8>): Unit
 
-// 解码：数据 + 位置 + 配置 → 返回值 + 新位置
+// 解码：数据 + 位置 + 配置 -> 返回值 + 新位置
 public func decode_u32(data: Array<UInt8>, pos: Int64, config: Config): MyResult<(UInt32, Int64), DecodeError>
 ```
 
@@ -124,13 +131,22 @@ Cangjie 使用 `&` 而非 `+` 组合多个接口约束：
 
 有符号整数使用 zigzag 编码后按无符号规则编码。
 
+**大端支持**：所有 varint_encode/varint_decode 函数新增 `endian: Endianness` 参数，多字节分支（u16/u32/u64）按 endian 选择小端（LE）或大端（BE）写入/读取。签名示例：
+
+```cangjie
+public func varint_encode_u16(val: UInt16, endian: Endianness, buf: ArrayList<UInt8>): Unit
+public func varint_decode_u16(data: Array<UInt8>, pos: Int64, endian: Endianness): MyResult<(UInt16, Int64), DecodeError>
+```
+
+encode.cj 调用处传 `config.endianness()`，使 varint 编码随配置自动适配双端。
+
 ### 7. 大端/小端字节序支持
 
-所有固定大小的整数和浮点数编码/解码均尊重 `config.endianness()`：
+所有固定大小的整数和浮点数编码/解码均尊重 `config.endianness()`，varint 编解码同样支持双端：
 
 ```cangjie
 public func encode_u16(val: UInt16, config: Config, buf: ArrayList<UInt8>): Unit {
-    if (is_varint(config)) { varint_encode_u16(val, buf) }
+    if (is_varint(config)) { varint_encode_u16(val, config.endianness(), buf) }
     else {
         if (is_little_endian(config)) {
             buf.add(u16_to_u8(val & 0xFF)); buf.add(u16_to_u8((val >> 8) & 0xFF))
@@ -141,7 +157,7 @@ public func encode_u16(val: UInt16, config: Config, buf: ArrayList<UInt8>): Unit
 }
 ```
 
-适用类型：`u16/u32/u64/i16/i32/i64/f32/f64`，以及它们对应的原子类型。
+适用类型：`u16/u32/u64/i16/i32/i64/f32/f64`，以及它们对应的原子类型。varint 路径下多字节整数同样按 `config.endianness()` 选择 LE/BE。
 
 ### 8. 大端读取函数
 
@@ -178,6 +194,16 @@ public class Configuration<E, I, L> <: Config where E <: EndianConfig, ... {
 }
 ```
 
+### 11. Result/Bound 标记使用 u32
+
+与 Rust bincode 二进制格式对齐，`encode_result_ok/err` 和 `encode_bound` 使用 `encode_u32(0/1/2, config, buf)` 替代 `buf.add(0u8/1u8/2u8)`；`decode_result/bound` 使用 `decode_u32` 替代 `decode_u8`。标记值含义：
+
+| 标记值 | Result | Bound |
+|--------|--------|-------|
+| 0 | Ok | Unbounded |
+| 1 | Err | Included |
+| 2 | - | Excluded |
+
 ## 容器类型 API
 
 ### ArrayList<T>
@@ -211,14 +237,14 @@ public func decode_option<T>(data: Array<UInt8>, pos: Int64, config: Config): My
 ### 便捷函数
 
 ```cangjie
-public func encode_to_vec<E>(val: E, config: Config): ArrayList<UInt8> where E <: Encode
-public func encode_into_writer<E>(val: E, config: Config, writer: VecWriter): Unit where E <: Encode
+public func encode_to_vec<E>(val: E, config: Config): MyResult<ArrayList<UInt8>, EncodeError> where E <: Encode
+public func encode_into_writer<E>(val: E, config: Config, writer: VecWriter): Int64 where E <: Encode
 public func decode_from_reader<D>(data: Array<UInt8>, config: Config): MyResult<D, DecodeError> where D <: Decode<D>
 ```
 
 ### 原子类型
 
-Cangjie `std.sync` 包提供 9 种原子类型，bincode4cj 提供编码/解码函数：
+Cangjie `std.sync` 包提供 9 种原子类型，bincode4cj 提供编码/解码函数。原子类型通过 `encode_u16` 等间接支持 varint 大端：
 
 ```cangjie
 // 编码（11 种）
@@ -230,15 +256,15 @@ public func encode_atomic_usize/isize(val: ..., config: Config, buf: ArrayList<U
 public func decode_atomic_bool/uint8/uint16/uint32/uint64/int8/int16/int32/int64/usize/isize(data: ..., pos: ..., config: ...): MyResult<(... , Int64), DecodeError>
 ```
 
-## 元组编码/解码 (2-8)
+## 元组编码/解码 (1-16)
 
-encode.cj 和 decode.cj 均提供 2-8 元组的编解码函数：
+已实现 1-16 元组编解码（编译器实测确认仓颉支持 9-16 元组字面量）。encode.cj 和 decode.cj 均提供 1-16 元组的编解码函数：
 
 ```cangjie
 public func encode_tuple2<A, B>(val: (A, B), config: Config, buf: ArrayList<UInt8>): Unit where A <: Encode, B <: Encode
-// ... 至 encode_tuple8
+// ... 至 encode_tuple16
 public func decode_tuple2<A, B>(data: Array<UInt8>, pos: Int64, config: Config): MyResult<((A, B), Int64), DecodeError> where A <: Decode<A>, B <: Decode<B>
-// ... 至 decode_tuple8
+// ... 至 decode_tuple16
 ```
 
 ## HashMap 迭代方式
@@ -260,7 +286,7 @@ for (entry in val) {
 
 使用 `std.unittest` 框架。测试文件位于 `src/test/` 目录，与源文件同包。
 
-### 现有测试（391 用例，391 PASSED，0 FAILED，0 ERROR）
+### 现有测试（957 用例，957 PASSED，0 FAILED，0 ERROR，覆盖率 87.8%）
 
 | 测试文件 | 测试类 | 用例数 | 覆盖模块 |
 |---------|--------|--------|---------|
@@ -282,6 +308,10 @@ for (entry in val) {
 | result_test.cj | ResultTests | 2 | MyResult 编解码 |
 | tuple_test.cj | TupleTests | 2 | 元组编解码 |
 | basic_types_test.cj | BasicTypesTests | 2 | 基本类型 roundtrip |
+| varint_be_test.cj | VarintBeTests | - | Varint 大端编解码 |
+| collection_decode_test.cj | CollectionDecodeTests | - | 集合类型 Decode |
+| coverage_test.cj | CoverageTests | - | 覆盖率补充 |
+| derive_test.cj | DeriveTests | - | derive 宏 |
 
 ## 配置系统
 
@@ -370,32 +400,104 @@ public enum DecodeError {
 }
 ```
 
+### toString() 支持
+
+`EncodeError`、`DecodeError`、`IntegerType`、`AllowedEnumVariants` 均实现了 `toString(): String` 方法，便于错误输出与调试。
+
 ## 已知限制与不可迁移项
 
-### Cangjie 1.0.5 语言限制
+### Cangjie 1.0.5 语言限制（编译器实测确认）
 
-| 限制项 | 影响 | 绕过方案 |
-|--------|------|---------|
-| `x as T` 跨整数类型转换始终返回 `None` | 所有 `as` 操作符失效 | 使用 `@OverflowWrapping` + `T(e)` 构造函数语法 |
-| 不支持 const 泛型 | `Limit<N>` 无法实现 | 仅支持 `NoLimit` |
-| 不支持 `impl` 块 | 无法使用 trait 式 API | 函数式 API |
-| 不支持 `&T` 引用参数 | 无法使用引用传递 | 值传递/元组返回 |
-| 不支持 `?` 操作符 | 错误传播冗长 | `match { case ... }` |
-| 不支持 `Enum::Variant` 语法 | 枚举变体访问需用 `.` | `Enum.Variant` |
-| match 臂不支持多语句块 | 复杂 match 需辅助函数 | 抽取为单独函数 |
-| 无内置 `Result<T,E>` | 需自定义 | `MyResult<T,E>` |
-| 无 serde 等价物 | serde 兼容不可用 | 原生 `Encode`/`Decode` 接口 |
+| 限制项 | 影响 | 证据来源 | 绕过方案 |
+|--------|------|---------|---------|
+| `BorrowDecode` | 无法实现零拷贝借用解码 | 编译器实测 `<'a, T>` 语法报错 | 使用 `extend T <: Decode<T>`，owned 拷贝替代 |
+| `const Limit<N>` | 无法实现编译期字节限制 | 编译器实测 `<const N: Int64>` 语法报错 | 仅支持 `NoLimit`（运行时无限制） |
+| `i128`/`u128` | 无原生 128 位整数类型 | 官方文档整数类型清单无 Int128/UInt128 | 自定义 `UInt128` 类（两个 UInt64 实现） |
+
+### 限制证据详情
+
+以下证据均通过 Cangjie 1.0.5 编译器（cjc）实测获取。
+
+#### 1. 生命周期不可用（BorrowDecode 无法迁移）
+
+**测试代码**：
+```cangjie
+func longest<'a>(s1: &'a String, s2: &'a String): &'a String {
+    if (s1.size() > s2.size()) { s1 } else { s2 }
+}
+```
+
+**编译命令**：`cjc test_lifetime.cj -o test_lifetime`
+
+**编译器报错**：
+```
+error: expected a generic type name after '<' in generic, found ''
+ ==> test_lifetime.cj:2:14:
+2 | func longest<'a>(s1: &'a String, s2: &'a String): &'a String {
+  |              ~^^^^^^^^^ expected a generic type name here
+  |              |
+  |              after '<' in generic
+```
+
+**结论**：仓颉泛型参数 `<>` 内只接受类型标识符，不接受 `'a` 生命周期参数。无法实现 Rust 的 `BorrowDecode<'de>` trait 和 `&'a str`/`&'a [u8]` 借用返回。
+
+#### 2. const 泛型不可用（Limit\<N\> 无法迁移）
+
+**测试代码**：
+```cangjie
+class FixedArray<T, const N: Int64> {
+    var data: Array<T>
+}
+```
+
+**编译命令**：`cjc test_const_generic.cj -o test_const_generic`
+
+**编译器报错**：
+```
+error: expected a generic type name after ',' in generic, found keyword 'const'
+ ==> test_const_generic.cj:2:21:
+2 | class FixedArray<T, const N: Int64> {
+  |                  ~^^^^ expected a generic type name here
+```
+
+**结论**：仓颉泛型参数只接受类型，不接受 `const N: Int64` 形式的编译期常量参数。无法实现 Rust 的 `Limit<const N: usize>` 类型。
+
+**补充验证**：9-16 元组用同样方式实测，编译**通过**（仅 unused variable warning），证明"不支持 >8 元组"是错误说法，9-16 元组已实现。
+
+#### 3. i128/u128 原生类型不存在
+
+**官方文档路径**：`cangjie-original-docs/kernel/source_zh_cn/basic_data_type/integer.md`
+
+**文档原文**：
+> 有符号整数类型包括 `Int8`、`Int16`、`Int32`、`Int64` 和 `IntNative`，分别用于表示编码长度为 `8-bit`、`16-bit`、`32-bit`、`64-bit` 和平台相关大小的有符号整数值的类型。
+> 无符号整数类型包括 `UInt8`、`UInt16`、`UInt32`、`UInt64` 和 `UIntNative`。
+
+**结论**：整数类型清单最大为 64 位，无 Int128/UInt128。通过自定义 `UInt128` 类（两个 UInt64 拼接）和 `Int128` 类平替，功能等价。
 
 ### 标准库不存在的类型
 
 > 以下类型在 Cangjie 1.0.5 标准库中不存在，已通过自建平替方案实现：
-> **已实现编解码**：`Boxed<T>`（平替 `Box<T>`）、`RefCounted<T>`（平替 `Rc<T>`）、`AtomicRefCounted<T>`（平替 `Arc<T>`）、`CowEnum<T>`（平替 `Cow<'_, T>`）、`NonZeroI8/I16/I32/I64`、`NonZeroU128`、`NonZeroUsize`、`SyncMutex<T>`（平替 `Mutex<T>`）、`RwLock_<T>`（平替 `RwLock<T>`）、`CString`、`SocketAddrV4`、`SocketAddrV6`
-> **仅包装类（无泛型 Encode/Decode）**：`BinaryHeap<T>`、`VecDeque<T>`、`BTreeMap<K,V>`、`BTreeSet<T>`
+> **已实现编解码**：`Boxed<T>`（平替 `Box<T>`）、`RefCounted<T>`（平替 `Rc<T>`）、`AtomicRefCounted<T>`（平替 `Arc<T>`）、`CowEnum<T>`（平替 `Cow<'_, T>`）、`NonZeroI8/I16/I32/I64`、`NonZeroU128`、`NonZeroUsize`、`SyncMutex<T>`（平替 `Mutex<T>`）、`RwLock_<T>`（平替 `RwLock<T>`）、`CString`、`SocketAddrV4`、`SocketAddrV6`、`PhantomData<T>`（空操作 Encode/Decode）、`BinaryHeap<T>`、`VecDeque<T>`、`BTreeMap<K,V>`、`BTreeSet<T>`（均已有完整 Encode+Decode）
+
+### SizeWriter
+
+encode.cj 新增 `SizeWriter` 类，仅计数不写数据，用于预计算编码大小（如分配缓冲区前测算长度）。
+
+### 网络类型对齐 Rust
+
+网络类型编码格式与 Rust bincode 二进制兼容：
+
+| 类型 | 编码格式 |
+|------|---------|
+| `IPv6Address` | 16 字节原始地址（大端） |
+| `IPAddress` | u32 标记（0=V4, 1=V6）+ 地址 |
+| `IPSocketAddress` | u32 标记（0=V4, 1=V6）+ socket |
+| `SocketAddrV6` | ip（16 字节）+ port（u16），不含 flow_info/scope_id |
 
 ## 构建状态
 
-- **构建**: `cjpm build` ✅（7 warnings, 0 errors）
-- **测试**: `cjpm test` ✅（391/391 PASSED, 0 FAILED, 0 ERROR）
+- **构建**: `cjpm build` ✅（2 warnings, 0 errors）
+- **测试**: `cjpm test` ✅（957/957 PASSED, 0 FAILED, 0 ERROR，覆盖率 87.8%）
 
 ## 平替方案说明
 
@@ -407,7 +509,7 @@ public enum DecodeError {
 | `Rc<T>` | `RefCounted<T>` | 非线程安全引用计数，需手动 `clone`/`drop` | ✅ |
 | `Arc<T>` | `AtomicRefCounted<T>` | 线程安全原子引用计数 | ✅ |
 | `Cow<'_, T>` | `CowEnum<T>` | 不含生命周期，始终 owned | ✅ |
-| `Bound<T>` | `BoundEnum<T>` | 功能等价 | ✅ |
+| `Bound<T>` | `BoundEnum<T>` | 功能等价；标记使用 u32（与 Rust 对齐） | ✅ |
 | `NonZeroU8/16/32/64` | `NonZeroU8/16/32/64` | 运行时检查非零 | ✅ |
 | `NonZeroI8/I16/I32/I64` | `NonZeroI8/I16/I32/I64` | 有符号非零类型 | ✅ |
 | `NonZeroU128` | `NonZeroU128` | 128 位非零类型 | ✅ |
@@ -419,19 +521,19 @@ public enum DecodeError {
 | `CString` | `CString` | NUL 字节检查 | ✅ |
 | `Mutex<T>` | `SyncMutex<T>` | 基于 Cangjie `Mutex` + `synchronized` | ✅ |
 | `RwLock<T>` | `RwLock_<T>` | 基于 `Mutex` 模拟读写锁 | ✅ |
-| `PhantomData<T>` | `PhantomData<T>` | 零大小类型标记 | ❌（无编解码意义） |
+| `PhantomData<T>` | `PhantomData<T>` | 零大小类型标记；已实现空操作 Encode/Decode | ✅ |
 | `usize` / `isize` | `Usize` / `Isize` | 类型别名 = `UInt64` / `Int64` | ✅ |
 | `SocketAddrV4` | `SocketAddrV4` | IPv4 地址 + 端口 | ✅ |
-| `SocketAddrV6` | `SocketAddrV6` | IPv6 地址 + 端口 + flow_info + scope_id | ✅ |
-| `BinaryHeap<T>` | `BinaryHeap<T>` | 基于 ArrayList 的最大堆（无泛型 Encode/Decode） | ⚠️ |
-| `VecDeque<T>` | `VecDeque<T>` | 基于 ArrayList 的双端队列（无泛型 Encode/Decode） | ⚠️ |
-| `BTreeMap<K,V>` | `BTreeMap<K,V>` | 基于 HashMap 的有序映射（无泛型 Encode/Decode） | ⚠️ |
-| `BTreeSet<T>` | `BTreeSet<T>` | 基于 HashSet 的有序集合（无泛型 Encode/Decode） | ⚠️ |
+| `SocketAddrV6` | `SocketAddrV6` | IPv6 地址 + 端口（仅编码 ip+port，去掉 flow_info/scope_id） | ✅ |
+| `BinaryHeap<T>` | `BinaryHeap<T>` | 基于 ArrayList 的最大堆；已实现完整 Encode+Decode | ✅ |
+| `VecDeque<T>` | `VecDeque<T>` | 基于 ArrayList 的双端队列；已实现完整 Encode+Decode | ✅ |
+| `BTreeMap<K,V>` | `BTreeMap<K,V>` | 基于 HashMap 的有序映射；已实现完整 Encode+Decode | ✅ |
+| `BTreeSet<T>` | `BTreeSet<T>` | 基于 HashSet 的有序集合；已实现完整 Encode+Decode | ✅ |
 | `Box<str>` | `BoxedStr` | 字符串包装 | ✅ |
-| `Box<[T]>` | `BoxedSlice<T>` | 数组切片包装 | ✅ |
+| `Box<[T]>` | `BoxedSlice<T>` | 数组切片包装；已实现完整 Encode+Decode | ✅ |
 | `Rc<str>` | `RefCountedStr` | 引用计数字符串 | ✅ |
 | `Arc<str>` | `AtomicRefCountedStr` | 原子引用计数字符串 | ✅ |
-| `Result<T,U>` 编解码 | `encode_result`/`decode_result` | 基于 `MyResult<T,E>` | ✅ |
+| `Result<T,U>` 编解码 | `encode_result`/`decode_result` | 基于 `MyResult<T,E>`；标记使用 u32（与 Rust 对齐） | ✅ |
 | `Range<T>` 编解码 | `encode_range_custom`/`decode_range_custom` | 返回 `(T,T)` 元组 | ✅ |
 | `RangeInclusive<T>` | `encode_range_inclusive`/`decode_range_inclusive` | 闭区间编解码 | ✅ |
 | `BorrowDecode` | `extend T <: Decode<T>` | 无生命周期，owned 拷贝 | ⚠️ |
@@ -441,7 +543,8 @@ public enum DecodeError {
 | `Duration` 编解码 | `encode_duration`/`decode_duration` | secs + nanos 编码 | ✅ |
 | `Array<T>` 编解码 | `encode_array`/`decode_array` | 泛型数组编解码 | ✅ |
 | `u128` varint | `varint_encode_u128`/`varint_decode_u128` | 基于 `UInt128` 类 | ✅ |
-| 1元组 | `encode_tuple1`/`decode_tuple1` | 独立函数，无字面量语法 | ✅ |
+| 1-16 元组 | `encode_tuple1`~`encode_tuple16`/`decode_tuple1`~`decode_tuple16` | 已实现 1-16 元组编解码（编译器实测确认仓颉支持 9-16 元组字面量） | ✅ |
+| derive 宏 | `@deriveEncode`/`@deriveDecode`（bincode4cj-derive） | 已实现，支持 class + enum（不支持 bincode 属性） | ✅ |
 
 ## 偏离清单
 
@@ -456,6 +559,8 @@ public enum DecodeError {
 | 多语句 match 臂 | `{ stmt1; stmt2 }` | 需抽取为单独函数 | Cangjie match 臂只支持单表达式 |
 | 数值类型转换 | `T as U` 或 `T::from(u)` | `T(e)` 构造器 + `@OverflowWrapping` | Cangjie 使用 `T(e)` 语法；`as` 在跨整数类型时始终返回 `None` |
 | 接口实现 | 隐式实现 | 显式 ` <: Interface` | Cangjie 要求显式声明 |
-| UInt128/Int128 | 支持 | 不支持 | Cangjie 1.0.5 无 128 位整数 |
+| UInt128/Int128 | 原生支持 | 通过自定义 `UInt128` 类支持 | Cangjie 1.0.5 无 128 位整数 |
 | serde 兼容 | 可选特性 | 首期跳过 | 仓颉无 serde 等价物 |
-| derive 宏 | `#[derive(Encode,Decode)]` | 首期跳过 | 仓颉 derive 机制不同 |
+| derive 宏 | `#[derive(Encode,Decode)]` | 已实现 `@deriveEncode`/`@deriveDecode`，支持 class + enum（不支持 bincode 属性） | 仓颉 derive 机制不同 |
+| varint 大端 | 仅小端 | varint 支持 BigEndian/LittleEndian | 已修复，通过 endian 参数支持双端 |
+| 网络类型格式 | - | 与 Rust bincode 二进制兼容 | IPv6Address 16 字节大端；IPAddress/IPSocketAddress 带 u32 标记；SocketAddrV6 仅 ip+port |

@@ -66,7 +66,7 @@ public func decode_atomic_bool(data: Array<UInt8>, pos: Int64): MyResult<(Atomic
         case MyResult.Err(e) => MyResult.Err(e)
     }
 }
-public func decode_atomic_uint8(data: Array<UInt8>, pos: Int64, _config: Config): MyResult<(AtomicUInt8, Int64), DecodeError> {
+public func decode_atomic_uint8(data: Array<UInt8>, pos: Int64, _: Config): MyResult<(AtomicUInt8, Int64), DecodeError> {
     match (decode_u8(data, pos)) {
         case MyResult.Ok((v, p)) => MyResult.Ok((AtomicUInt8(v), p))
         case MyResult.Err(e) => MyResult.Err(e)

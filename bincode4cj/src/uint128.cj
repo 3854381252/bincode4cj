@@ -97,3 +97,37 @@ public class UInt128 {
     public func to_u64(): UInt64 { this.lo }
     public func to_string(): String { "UInt128(lo: ${this.lo}, hi: ${this.hi})" }
 }
+
+// Int128 — 128-bit signed integer, two's complement, lo=lower 64 bits, hi=upper 64 bits(signed)
+public class Int128 {
+    var lo: UInt64
+    var hi: Int64
+
+    public init(lo: UInt64, hi: Int64) {
+        this.lo = lo
+        this.hi = hi
+    }
+
+    public func is_negative(): Bool { this.hi < 0 }
+
+    @OverflowWrapping
+    public func negate(): Int128 {
+        let notLo = !this.lo
+        let notHi = !this.hi
+        let newLo = notLo + 1u64
+        let carry = if (newLo == 0u64) { 1i64 } else { 0i64 }
+        Int128(newLo, notHi + carry)
+    }
+
+    public func to_unsigned(): UInt128 {
+        UInt128(this.lo, i64_to_u64(this.hi))
+    }
+
+    public static func from_unsigned(val: UInt128): Int128 {
+        Int128(val.lo, u64_to_i64(val.hi))
+    }
+
+    public func to_i64(): Int64 { u64_to_i64(this.lo) }
+    public func equals(other: Int128): Bool { this.lo == other.lo && this.hi == other.hi }
+    public func to_string(): String { "Int128(lo: ${this.lo}, hi: ${this.hi})" }
+}

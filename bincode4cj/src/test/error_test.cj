@@ -11,7 +11,7 @@ public class ErrorTests {
         @Expect(integer_type_into_signed(IntegerType.U16), IntegerType.I16)
         @Expect(integer_type_into_signed(IntegerType.U32), IntegerType.I32)
         @Expect(integer_type_into_signed(IntegerType.U64), IntegerType.I64)
-        @Expect(integer_type_into_signed(IntegerType.U128), IntegerType.Reserved)
+        @Expect(integer_type_into_signed(IntegerType.U128), IntegerType.I128)
         @Expect(integer_type_into_signed(IntegerType.Usize), IntegerType.Isize)
         @Expect(integer_type_into_signed(IntegerType.I8), IntegerType.I8)
         @Expect(integer_type_into_signed(IntegerType.Reserved), IntegerType.Reserved)

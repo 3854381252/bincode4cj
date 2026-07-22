@@ -1,6 +1,7 @@
 // encode.cj — Encode helper functions
 package bincode4cj
 import std.collection.*
+import std.convert.*
 import std.fs.*
 import std.net.*
 import std.time.*
@@ -11,7 +12,7 @@ public func encode_bool(val: Bool, _: Config, buf: ArrayList<UInt8>): Unit {
 public func encode_u8(val: UInt8, _: Config, buf: ArrayList<UInt8>): Unit { buf.add(val) }
 
 public func encode_u16(val: UInt16, config: Config, buf: ArrayList<UInt8>): Unit {
-    if (is_varint(config)) { varint_encode_u16(val, buf) }
+    if (is_varint(config)) { varint_encode_u16(val, config.endianness(), buf) }
     else {
         if (is_little_endian(config)) {
             buf.add(u16_to_u8(val & 0xFF)); buf.add(u16_to_u8((val >> 8) & 0xFF))
@@ -22,7 +23,7 @@ public func encode_u16(val: UInt16, config: Config, buf: ArrayList<UInt8>): Unit
 }
 
 public func encode_u32(val: UInt32, config: Config, buf: ArrayList<UInt8>): Unit {
-    if (is_varint(config)) { varint_encode_u32(val, buf) }
+    if (is_varint(config)) { varint_encode_u32(val, config.endianness(), buf) }
     else {
         if (is_little_endian(config)) {
             buf.add(u32_to_u8(val & 0xFF)); buf.add(u32_to_u8((val >> 8) & 0xFF))
@@ -35,7 +36,7 @@ public func encode_u32(val: UInt32, config: Config, buf: ArrayList<UInt8>): Unit
 }
 
 public func encode_u64(val: UInt64, config: Config, buf: ArrayList<UInt8>): Unit {
-    if (is_varint(config)) { varint_encode_u64(val, buf) }
+    if (is_varint(config)) { varint_encode_u64(val, config.endianness(), buf) }
     else {
         if (is_little_endian(config)) {
             buf.add(u64_to_u8(val & 0xFF)); buf.add(u64_to_u8((val >> 8) & 0xFF))
@@ -54,7 +55,7 @@ public func encode_u64(val: UInt64, config: Config, buf: ArrayList<UInt8>): Unit
 public func encode_i8(val: Int8, _: Config, buf: ArrayList<UInt8>): Unit { buf.add(i8_to_u8(val)) }
 
 public func encode_i16(val: Int16, config: Config, buf: ArrayList<UInt8>): Unit {
-    if (is_varint(config)) { varint_encode_i16(val, buf) }
+    if (is_varint(config)) { varint_encode_i16(val, config.endianness(), buf) }
     else {
         let v = i64_to_u64(i16_to_i64(val))
         if (is_little_endian(config)) {
@@ -66,7 +67,7 @@ public func encode_i16(val: Int16, config: Config, buf: ArrayList<UInt8>): Unit 
 }
 
 public func encode_i32(val: Int32, config: Config, buf: ArrayList<UInt8>): Unit {
-    if (is_varint(config)) { varint_encode_i32(val, buf) }
+    if (is_varint(config)) { varint_encode_i32(val, config.endianness(), buf) }
     else {
         let v = i64_to_u64(i32_to_i64(val))
         if (is_little_endian(config)) {
@@ -80,7 +81,7 @@ public func encode_i32(val: Int32, config: Config, buf: ArrayList<UInt8>): Unit 
 }
 
 public func encode_i64(val: Int64, config: Config, buf: ArrayList<UInt8>): Unit {
-    if (is_varint(config)) { varint_encode_i64(val, buf) }
+    if (is_varint(config)) { varint_encode_i64(val, config.endianness(), buf) }
     else {
         let v = i64_to_u64(val)
         if (is_little_endian(config)) {
@@ -151,8 +152,10 @@ public func encode_char(val: Rune, _: Config, buf: ArrayList<UInt8>): Unit {
 }
 
 public func encode_duration(val: Duration, config: Config, buf: ArrayList<UInt8>): Unit {
-    encode_u64(i64_to_u64(val.toSeconds()), config, buf)
-    encode_u32(i64_to_u32(val.toNanoseconds()), config, buf)
+    let secs = val.toSeconds()
+    let subsecNanos = val.toNanoseconds() - secs * 1000000000
+    encode_u64(i64_to_u64(secs), config, buf)
+    encode_u32(i64_to_u32(subsecNanos), config, buf)
 }
 
 public func encode_path(val: Path, config: Config, buf: ArrayList<UInt8>): Unit {
@@ -171,6 +174,15 @@ public class VecWriter {
         while (i < bytes.size) { this.buf.add(bytes[i]); i += 1 }
     }
     public func collect(): ArrayList<UInt8> { this.buf }
+}
+
+// SizeWriter - 仅计数不写数据，用于预计算编码大小
+public class SizeWriter {
+    var count: Int64
+    public init() { this.count = 0 }
+    public func write_byte(b: UInt8): Unit { this.count += 1 }
+    public func write_bytes(bytes: Array<UInt8>): Unit { this.count += bytes.size }
+    public func size(): Int64 { this.count }
 }
 
 public func encode_arraylist<T>(val: ArrayList<T>, config: Config, buf: ArrayList<UInt8>): Unit where T <: Encode {
@@ -225,12 +237,12 @@ public func encode_result<T, E>(val: MyResult<T, E>, config: Config, buf: ArrayL
 }
 
 public func encode_result_ok<T>(v: T, config: Config, buf: ArrayList<UInt8>): Unit where T <: Encode {
-    buf.add(0u8)
+    encode_u32(0, config, buf)
     v.encode(config, buf)
 }
 
 public func encode_result_err<E>(e: E, config: Config, buf: ArrayList<UInt8>): Unit where E <: Encode {
-    buf.add(1u8)
+    encode_u32(1, config, buf)
     e.encode(config, buf)
 }
 
@@ -249,57 +261,80 @@ public func encode_range_inclusive<T>(start: T, end: T, config: Config, buf: Arr
 // Bound 编解码
 public func encode_bound<T>(val: BoundEnum<T>, config: Config, buf: ArrayList<UInt8>): Unit where T <: Encode {
     match (val) {
-        case BoundEnum.Unbounded => buf.add(0u8)
+        case BoundEnum.Unbounded => encode_u32(0, config, buf)
         case BoundEnum.Included(v) => encode_bound_included(v, config, buf)
         case BoundEnum.Excluded(v) => encode_bound_excluded(v, config, buf)
     }
 }
 
 public func encode_bound_included<T>(v: T, config: Config, buf: ArrayList<UInt8>): Unit where T <: Encode {
-    buf.add(1u8)
+    encode_u32(1, config, buf)
     v.encode(config, buf)
 }
 
 public func encode_bound_excluded<T>(v: T, config: Config, buf: ArrayList<UInt8>): Unit where T <: Encode {
-    buf.add(2u8)
+    encode_u32(2, config, buf)
     v.encode(config, buf)
 }
 
-public func encode_to_vec<E>(val: E, config: Config): ArrayList<UInt8> where E <: Encode {
+public func encode_to_vec<E>(val: E, config: Config): MyResult<ArrayList<UInt8>, EncodeError> where E <: Encode {
     let buf = ArrayList<UInt8>()
     val.encode(config, buf)
-    buf
+    MyResult.Ok(buf)
 }
 
 // === 新增类型编码 ===
 
-public func encode_ipv4_address(val: IPv4Address, config: Config, buf: ArrayList<UInt8>): Unit {
-    let s = val.toString()
-    encode_string(s, config, buf)
+// === 网络类型编码（与 Rust bincode 兼容） ===
+// IPv4: 4 字节原始地址（大端/网络字节序，不受 config endian 影响）
+// IPv6: 16 字节原始地址（大端/网络字节序，不受 config endian 影响）
+// IpAddr: u32 变体标记(0=V4, 1=V6) + 对应地址
+// SocketAddr: u32 变体标记(0=V4, 1=V6) + 对应 SocketAddrV4/V6
+// SocketAddrV4: Ipv4Addr(4字节) + u16 port
+// SocketAddrV6: Ipv6Addr(16字节) + u16 port（不含 flow_info/scope_id）
+
+public func encode_ipv4_address(val: IPv4Address, _: Config, buf: ArrayList<UInt8>): Unit {
+    let bytes = val.getAddressBytes()
+    var i: Int64 = 0
+    while (i < bytes.size) { buf.add(bytes[i]); i += 1 }
 }
 
 public func encode_ip_address(val: IPAddress, config: Config, buf: ArrayList<UInt8>): Unit {
-    let s = val.toString()
-    encode_string(s, config, buf)
+    if (val.isIPv4()) {
+        encode_u32(0, config, buf)
+    } else {
+        encode_u32(1, config, buf)
+    }
+    let bytes = val.getAddressBytes()
+    var i: Int64 = 0
+    while (i < bytes.size) { buf.add(bytes[i]); i += 1 }
 }
 
 public func encode_ip_socket_address(val: IPSocketAddress, config: Config, buf: ArrayList<UInt8>): Unit {
-    let s = val.toString()
-    encode_string(s, config, buf)
+    if (val.isIPv4()) {
+        encode_u32(0, config, buf)
+    } else {
+        encode_u32(1, config, buf)
+    }
+    let bytes = val.address.getAddressBytes()
+    var i: Int64 = 0
+    while (i < bytes.size) { buf.add(bytes[i]); i += 1 }
+    encode_u16(val.port, config, buf)
 }
 
-public func encode_ipv6_address(val: IPv6Address, config: Config, buf: ArrayList<UInt8>): Unit {
-    let s = val.toString()
-    encode_string(s, config, buf)
+public func encode_ipv6_address(val: IPv6Address, _: Config, buf: ArrayList<UInt8>): Unit {
+    let bytes = val.getAddressBytes()
+    var i: Int64 = 0
+    while (i < bytes.size) { buf.add(bytes[i]); i += 1 }
 }
 
 public func encode_date_time(val: DateTime, config: Config, buf: ArrayList<UInt8>): Unit {
-    encode_string(val.toString(), config, buf)
+    encode_string(val.format("yyyy-MM-dd'T'HH:mm:ss.SSSXXX"), config, buf)
 }
 
 // === SocketAddrV4 / SocketAddrV6 编码 ===
 // 与 Rust bincode 兼容：SocketAddrV4 = Ipv4Addr + u16 port
-// SocketAddrV6 = Ipv6Addr + u16 port + u32 flow_info + u32 scope_id
+// SocketAddrV6 = Ipv6Addr + u16 port（不含 flow_info/scope_id）
 
 public func encode_socket_addr_v4(val: SocketAddrV4, config: Config, buf: ArrayList<UInt8>): Unit {
     encode_ipv4_address(val.get_ip(), config, buf)
@@ -309,8 +344,6 @@ public func encode_socket_addr_v4(val: SocketAddrV4, config: Config, buf: ArrayL
 public func encode_socket_addr_v6(val: SocketAddrV6, config: Config, buf: ArrayList<UInt8>): Unit {
     encode_ipv6_address(val.get_ip(), config, buf)
     encode_u16(val.get_port(), config, buf)
-    encode_u32(val.get_flow_info(), config, buf)
-    encode_u32(val.get_scope_id(), config, buf)
 }
 
 // === 元组编码 (2-16) ===
@@ -341,4 +374,27 @@ public func encode_tuple7<A, B, C, D, E, F, G>(val: (A, B, C, D, E, F, G), confi
 public func encode_tuple8<A, B, C, D, E, F, G, H>(val: (A, B, C, D, E, F, G, H), config: Config, buf: ArrayList<UInt8>): Unit where A <: Encode, B <: Encode, C <: Encode, D <: Encode, E <: Encode, F <: Encode, G <: Encode, H <: Encode {
     val[0].encode(config, buf); val[1].encode(config, buf); val[2].encode(config, buf); val[3].encode(config, buf); val[4].encode(config, buf); val[5].encode(config, buf); val[6].encode(config, buf); val[7].encode(config, buf)
 }
-// 注意：Cangjie 不支持 9-16 元组字面量，因此 9-16 元组编解码未实现
+public func encode_tuple9<A, B, C, D, E, F, G, H, I>(val: (A, B, C, D, E, F, G, H, I), config: Config, buf: ArrayList<UInt8>): Unit where A <: Encode, B <: Encode, C <: Encode, D <: Encode, E <: Encode, F <: Encode, G <: Encode, H <: Encode, I <: Encode {
+    val[0].encode(config, buf); val[1].encode(config, buf); val[2].encode(config, buf); val[3].encode(config, buf); val[4].encode(config, buf); val[5].encode(config, buf); val[6].encode(config, buf); val[7].encode(config, buf); val[8].encode(config, buf)
+}
+public func encode_tuple10<A, B, C, D, E, F, G, H, I, J>(val: (A, B, C, D, E, F, G, H, I, J), config: Config, buf: ArrayList<UInt8>): Unit where A <: Encode, B <: Encode, C <: Encode, D <: Encode, E <: Encode, F <: Encode, G <: Encode, H <: Encode, I <: Encode, J <: Encode {
+    val[0].encode(config, buf); val[1].encode(config, buf); val[2].encode(config, buf); val[3].encode(config, buf); val[4].encode(config, buf); val[5].encode(config, buf); val[6].encode(config, buf); val[7].encode(config, buf); val[8].encode(config, buf); val[9].encode(config, buf)
+}
+public func encode_tuple11<A, B, C, D, E, F, G, H, I, J, K>(val: (A, B, C, D, E, F, G, H, I, J, K), config: Config, buf: ArrayList<UInt8>): Unit where A <: Encode, B <: Encode, C <: Encode, D <: Encode, E <: Encode, F <: Encode, G <: Encode, H <: Encode, I <: Encode, J <: Encode, K <: Encode {
+    val[0].encode(config, buf); val[1].encode(config, buf); val[2].encode(config, buf); val[3].encode(config, buf); val[4].encode(config, buf); val[5].encode(config, buf); val[6].encode(config, buf); val[7].encode(config, buf); val[8].encode(config, buf); val[9].encode(config, buf); val[10].encode(config, buf)
+}
+public func encode_tuple12<A, B, C, D, E, F, G, H, I, J, K, L>(val: (A, B, C, D, E, F, G, H, I, J, K, L), config: Config, buf: ArrayList<UInt8>): Unit where A <: Encode, B <: Encode, C <: Encode, D <: Encode, E <: Encode, F <: Encode, G <: Encode, H <: Encode, I <: Encode, J <: Encode, K <: Encode, L <: Encode {
+    val[0].encode(config, buf); val[1].encode(config, buf); val[2].encode(config, buf); val[3].encode(config, buf); val[4].encode(config, buf); val[5].encode(config, buf); val[6].encode(config, buf); val[7].encode(config, buf); val[8].encode(config, buf); val[9].encode(config, buf); val[10].encode(config, buf); val[11].encode(config, buf)
+}
+public func encode_tuple13<A, B, C, D, E, F, G, H, I, J, K, L, M>(val: (A, B, C, D, E, F, G, H, I, J, K, L, M), config: Config, buf: ArrayList<UInt8>): Unit where A <: Encode, B <: Encode, C <: Encode, D <: Encode, E <: Encode, F <: Encode, G <: Encode, H <: Encode, I <: Encode, J <: Encode, K <: Encode, L <: Encode, M <: Encode {
+    val[0].encode(config, buf); val[1].encode(config, buf); val[2].encode(config, buf); val[3].encode(config, buf); val[4].encode(config, buf); val[5].encode(config, buf); val[6].encode(config, buf); val[7].encode(config, buf); val[8].encode(config, buf); val[9].encode(config, buf); val[10].encode(config, buf); val[11].encode(config, buf); val[12].encode(config, buf)
+}
+public func encode_tuple14<A, B, C, D, E, F, G, H, I, J, K, L, M, N>(val: (A, B, C, D, E, F, G, H, I, J, K, L, M, N), config: Config, buf: ArrayList<UInt8>): Unit where A <: Encode, B <: Encode, C <: Encode, D <: Encode, E <: Encode, F <: Encode, G <: Encode, H <: Encode, I <: Encode, J <: Encode, K <: Encode, L <: Encode, M <: Encode, N <: Encode {
+    val[0].encode(config, buf); val[1].encode(config, buf); val[2].encode(config, buf); val[3].encode(config, buf); val[4].encode(config, buf); val[5].encode(config, buf); val[6].encode(config, buf); val[7].encode(config, buf); val[8].encode(config, buf); val[9].encode(config, buf); val[10].encode(config, buf); val[11].encode(config, buf); val[12].encode(config, buf); val[13].encode(config, buf)
+}
+public func encode_tuple15<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O>(val: (A, B, C, D, E, F, G, H, I, J, K, L, M, N, O), config: Config, buf: ArrayList<UInt8>): Unit where A <: Encode, B <: Encode, C <: Encode, D <: Encode, E <: Encode, F <: Encode, G <: Encode, H <: Encode, I <: Encode, J <: Encode, K <: Encode, L <: Encode, M <: Encode, N <: Encode, O <: Encode {
+    val[0].encode(config, buf); val[1].encode(config, buf); val[2].encode(config, buf); val[3].encode(config, buf); val[4].encode(config, buf); val[5].encode(config, buf); val[6].encode(config, buf); val[7].encode(config, buf); val[8].encode(config, buf); val[9].encode(config, buf); val[10].encode(config, buf); val[11].encode(config, buf); val[12].encode(config, buf); val[13].encode(config, buf); val[14].encode(config, buf)
+}
+public func encode_tuple16<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P>(val: (A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P), config: Config, buf: ArrayList<UInt8>): Unit where A <: Encode, B <: Encode, C <: Encode, D <: Encode, E <: Encode, F <: Encode, G <: Encode, H <: Encode, I <: Encode, J <: Encode, K <: Encode, L <: Encode, M <: Encode, N <: Encode, O <: Encode, P <: Encode {
+    val[0].encode(config, buf); val[1].encode(config, buf); val[2].encode(config, buf); val[3].encode(config, buf); val[4].encode(config, buf); val[5].encode(config, buf); val[6].encode(config, buf); val[7].encode(config, buf); val[8].encode(config, buf); val[9].encode(config, buf); val[10].encode(config, buf); val[11].encode(config, buf); val[12].encode(config, buf); val[13].encode(config, buf); val[14].encode(config, buf); val[15].encode(config, buf)
+}

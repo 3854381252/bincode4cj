@@ -13,6 +13,10 @@ opt-level = "none"
 # 目标平台
 target = "darwin_aarch64_cjnative"
 
+# 依赖
+[dependencies]
+bincode4cj_derive = { path = "./src/bincode4cj-derive" }
+
 # 测试配置
 [test]
 framework = "std.unittest"

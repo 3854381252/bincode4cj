@@ -192,6 +192,28 @@ public class NonZeroU128 {
     public func get(): UInt128 { this.val }
 }
 
+// === NonZeroI128 ===
+
+public class NonZeroI128 {
+    var val: Int128
+    public init(val: Int128) {
+        if (val.lo == 0 && val.hi == 0) { throw Exception("NonZeroTypeIsZero(I128)") }
+        this.val = val
+    }
+    public func get(): Int128 { this.val }
+}
+
+// === NonZeroIsize（底层使用 Int64） ===
+
+public class NonZeroIsize {
+    var val: Int64
+    public init(val: Int64) {
+        if (val == 0) { throw Exception("NonZeroTypeIsZero(Isize)") }
+        this.val = val
+    }
+    public func get(): Int64 { this.val }
+}
+
 // === NonZeroUsize（底层使用 UInt64） ===
 
 public class NonZeroUsize {
@@ -278,17 +300,21 @@ public class RefCell<T> {
 public class RwLock_<T> {
     var val: T
     var lock: Mutex
+    var cond: Condition
     var readers: Int64
     var writer: Bool
     public init(val: T) {
         this.val = val
         this.lock = Mutex()
+        synchronized (this.lock) {
+            this.cond = this.lock.condition()
+        }
         this.readers = 0
         this.writer = false
     }
     public func read(): T {
         synchronized (this.lock) {
-            while (this.writer) { }
+            while (this.writer) { this.cond.wait() }
             this.readers += 1
         }
         this.val
@@ -302,7 +328,7 @@ public class RwLock_<T> {
     }
     public func write(): T {
         synchronized (this.lock) {
-            while (this.writer || this.readers > 0) { }
+            while (this.writer || this.readers > 0) { this.cond.wait() }
             this.writer = true
         }
         this.val
@@ -317,11 +343,13 @@ public class RwLock_<T> {
     public func read_release(): Unit {
         synchronized (this.lock) {
             this.readers -= 1
+            if (this.readers == 0) { this.cond.notifyAll() }
         }
     }
     public func write_release(): Unit {
         synchronized (this.lock) {
             this.writer = false
+            this.cond.notifyAll()
         }
     }
     public func into_inner(): T { this.val }
@@ -465,6 +493,19 @@ public class RefCountedStr {
     public func get(): String { this.inner }
     public func clone(): RefCountedStr { this.count += 1; this }
     public func drop(): Unit { this.count -= 1 }
+}
+
+// === SystemTime_ 平替 std::time::SystemTime ===
+// 编码为 (secs: UInt64, nanos: UInt32) 与 Rust bincode 二进制兼容
+public class SystemTime_ {
+    var secs: UInt64
+    var nanos: UInt32
+    public init(secs: UInt64, nanos: UInt32) {
+        this.secs = secs
+        this.nanos = nanos
+    }
+    public func get_secs(): UInt64 { this.secs }
+    public func get_nanos(): UInt32 { this.nanos }
 }
 
 // === AtomicRefCountedStr 平替 Arc<str> ===

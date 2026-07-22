@@ -34,15 +34,8 @@ public func i8_to_u8(x: Int8): UInt8 { UInt8(x) }
 public func i16_to_i64(x: Int16): Int64 { Int64(x) }
 @OverflowWrapping
 public func i32_to_i64(x: Int32): Int64 { Int64(x) }
-@OverflowWrapping
 public func bytes_to_string(b: Array<UInt8>): String {
-    var runes = ArrayList<Rune>()
-    var i: Int64 = 0
-    while (i < b.size) {
-        runes.add(Rune(UInt32(b[i])))
-        i += 1
-    }
-    String(runes.toArray())
+    String.fromUtf8(b)
 }
 
 @OverflowWrapping

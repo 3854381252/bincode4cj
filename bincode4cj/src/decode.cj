@@ -19,6 +19,16 @@ public func is_little_endian(config: Config): Bool {
     }
 }
 
+// 检查解码是否超过limit限制
+public func check_decode_limit(pos: Int64, needed: Int64, config: Config): MyResult<Unit, DecodeError> {
+    match (config.limit()) {
+        case Option.Some(limit) =>
+            if (pos + needed > limit) { MyResult.Err(DecodeError.LimitExceeded) }
+            else { MyResult.Ok(()) }
+        case Option.None => MyResult.Ok(())
+    }
+}
+
 public func decode_u8(data: Array<UInt8>, pos: Int64): MyResult<(UInt8, Int64), DecodeError> { read_u8(data, pos) }
 
 public func decode_bool(data: Array<UInt8>, pos: Int64): MyResult<(Bool, Int64), DecodeError> {
@@ -32,7 +42,7 @@ public func decode_bool(data: Array<UInt8>, pos: Int64): MyResult<(Bool, Int64),
 }
 
 public func decode_u16(data: Array<UInt8>, pos: Int64, config: Config): MyResult<(UInt16, Int64), DecodeError> {
-    if (is_varint(config)) { varint_decode_u16(data, pos) }
+    if (is_varint(config)) { varint_decode_u16(data, pos, config.endianness()) }
     else {
         if (is_little_endian(config)) { read_u16_le(data, pos) }
         else { read_u16_be(data, pos) }
@@ -41,7 +51,7 @@ public func decode_u16(data: Array<UInt8>, pos: Int64, config: Config): MyResult
 
 @OverflowWrapping
 public func decode_u32(data: Array<UInt8>, pos: Int64, config: Config): MyResult<(UInt32, Int64), DecodeError> {
-    if (is_varint(config)) { varint_decode_u32(data, pos) }
+    if (is_varint(config)) { varint_decode_u32(data, pos, config.endianness()) }
     else {
         if (is_little_endian(config)) { read_u32_le(data, pos) }
         else { read_u32_be(data, pos) }
@@ -49,7 +59,7 @@ public func decode_u32(data: Array<UInt8>, pos: Int64, config: Config): MyResult
 }
 
 public func decode_u64(data: Array<UInt8>, pos: Int64, config: Config): MyResult<(UInt64, Int64), DecodeError> {
-    if (is_varint(config)) { varint_decode_u64(data, pos) }
+    if (is_varint(config)) { varint_decode_u64(data, pos, config.endianness()) }
     else {
         if (is_little_endian(config)) { read_u64_le(data, pos) }
         else { read_u64_be(data, pos) }
@@ -66,7 +76,7 @@ public func decode_i8(data: Array<UInt8>, pos: Int64): MyResult<(Int8, Int64), D
 
 public func decode_i16(data: Array<UInt8>, pos: Int64, config: Config): MyResult<(Int16, Int64), DecodeError> {
     if (is_varint(config)) {
-        match (varint_decode_i16(data, pos)) {
+        match (varint_decode_i16(data, pos, config.endianness())) {
             case MyResult.Ok(v) => MyResult.Ok(v)
             case MyResult.Err(e) => MyResult.Err(e)
         }
@@ -82,7 +92,7 @@ public func decode_i16(data: Array<UInt8>, pos: Int64, config: Config): MyResult
 
 public func decode_i32(data: Array<UInt8>, pos: Int64, config: Config): MyResult<(Int32, Int64), DecodeError> {
     if (is_varint(config)) {
-        match (varint_decode_i32(data, pos)) {
+        match (varint_decode_i32(data, pos, config.endianness())) {
             case MyResult.Ok(v) => MyResult.Ok(v)
             case MyResult.Err(e) => MyResult.Err(e)
         }
@@ -98,7 +108,7 @@ public func decode_i32(data: Array<UInt8>, pos: Int64, config: Config): MyResult
 
 public func decode_i64(data: Array<UInt8>, pos: Int64, config: Config): MyResult<(Int64, Int64), DecodeError> {
     if (is_varint(config)) {
-        match (varint_decode_i64(data, pos)) {
+        match (varint_decode_i64(data, pos, config.endianness())) {
             case MyResult.Ok(v) => MyResult.Ok(v)
             case MyResult.Err(e) => MyResult.Err(e)
         }
@@ -145,10 +155,20 @@ public func read_bytes_into(data: Array<UInt8>, pos: Int64, len: Int64): MyResul
     MyResult.Ok((buf, p))
 }
 
+// Read bytes with limit check
+public func read_bytes_into_limited(data: Array<UInt8>, pos: Int64, len: Int64, config: Config): MyResult<(ArrayList<UInt8>, Int64), DecodeError> {
+    let limitCheck = check_decode_limit(pos, len, config)
+    match (limitCheck) {
+        case MyResult.Err(e) => return MyResult.Err(e)
+        case _ => ()
+    }
+    read_bytes_into(data, pos, len)
+}
+
 public func decode_string(data: Array<UInt8>, pos: Int64, config: Config): MyResult<(String, Int64), DecodeError> {
     match (decode_u64(data, pos, config)) {
         case MyResult.Ok((len, p)) =>
-            match (read_bytes_into(data, p, u64_to_i64(len))) {
+            match (read_bytes_into_limited(data, p, u64_to_i64(len), config)) {
                 case MyResult.Ok((buf, p2)) => MyResult.Ok((bytes_to_string(buf.toArray()), p2))
                 case MyResult.Err(e) => MyResult.Err(e)
             }
@@ -219,36 +239,69 @@ public func decode_path(data: Array<UInt8>, pos: Int64, config: Config): MyResul
 }
 
 public func decode_ipv4_address(data: Array<UInt8>, pos: Int64, _: Config): MyResult<(IPv4Address, Int64), DecodeError> {
-    match (read_u32_le(data, pos)) {
-        case MyResult.Ok((bits, p)) => MyResult.Ok((IPv4Address(UInt8(bits & 0xFF), UInt8((bits >> 8) & 0xFF), UInt8((bits >> 16) & 0xFF), UInt8((bits >> 24) & 0xFF)), p))
+    match (read_bytes_into(data, pos, 4)) {
+        case MyResult.Ok((buf, p)) => MyResult.Ok((IPv4Address(buf[0], buf[1], buf[2], buf[3]), p))
         case MyResult.Err(e) => MyResult.Err(e)
     }
 }
 
 public func decode_ip_address(data: Array<UInt8>, pos: Int64, config: Config): MyResult<(IPAddress, Int64), DecodeError> {
-    match (decode_string(data, pos, config)) {
-        case MyResult.Ok((s, p)) => MyResult.Ok((IPAddress.parse(s), p))
+    match (decode_u32(data, pos, config)) {
+        case MyResult.Ok((tag, p)) =>
+            if (tag == 0) {
+                match (decode_ipv4_address(data, p, config)) {
+                    case MyResult.Ok((ip, p2)) =>
+                        let addr: IPAddress = ip
+                        MyResult.Ok((addr, p2))
+                    case MyResult.Err(e) => MyResult.Err(e)
+                }
+            } else if (tag == 1) {
+                decode_ipv6_address(data, p, config)
+            } else {
+                MyResult.Err(DecodeError.Other("Invalid IP address tag"))
+            }
         case MyResult.Err(e) => MyResult.Err(e)
     }
 }
 
 public func decode_ip_socket_address(data: Array<UInt8>, pos: Int64, config: Config): MyResult<(IPSocketAddress, Int64), DecodeError> {
-    match (decode_string(data, pos, config)) {
-        case MyResult.Ok((s, p)) => MyResult.Ok((IPSocketAddress.parse(s), p))
+    match (decode_u32(data, pos, config)) {
+        case MyResult.Ok((tag, p)) =>
+            if (tag == 0) {
+                match (decode_ipv4_address(data, p, config)) {
+                    case MyResult.Ok((ip, p2)) =>
+                        match (decode_u16(data, p2, config)) {
+                            case MyResult.Ok((port, p3)) => MyResult.Ok((IPSocketAddress(ip, port), p3))
+                            case MyResult.Err(e) => MyResult.Err(e)
+                        }
+                    case MyResult.Err(e) => MyResult.Err(e)
+                }
+            } else if (tag == 1) {
+                match (decode_ipv6_address(data, p, config)) {
+                    case MyResult.Ok((ip, p2)) =>
+                        match (decode_u16(data, p2, config)) {
+                            case MyResult.Ok((port, p3)) => MyResult.Ok((IPSocketAddress(ip, port), p3))
+                            case MyResult.Err(e) => MyResult.Err(e)
+                        }
+                    case MyResult.Err(e) => MyResult.Err(e)
+                }
+            } else {
+                MyResult.Err(DecodeError.Other("Invalid socket address tag"))
+            }
         case MyResult.Err(e) => MyResult.Err(e)
     }
 }
 
-public func decode_ipv6_address(data: Array<UInt8>, pos: Int64, config: Config): MyResult<(IPAddress, Int64), DecodeError> {
-    match (decode_string(data, pos, config)) {
-        case MyResult.Ok((s, p)) => MyResult.Ok((IPAddress.parse(s), p))
+public func decode_ipv6_address(data: Array<UInt8>, pos: Int64, _: Config): MyResult<(IPAddress, Int64), DecodeError> {
+    match (read_bytes_into(data, pos, 16)) {
+        case MyResult.Ok((buf, p)) => MyResult.Ok((IPv6Address(buf.toArray()), p))
         case MyResult.Err(e) => MyResult.Err(e)
     }
 }
 
 public func decode_date_time(data: Array<UInt8>, pos: Int64, config: Config): MyResult<(DateTime, Int64), DecodeError> {
     match (decode_string(data, pos, config)) {
-        case MyResult.Ok((s, p)) => MyResult.Ok((DateTime.parse(s, "yyyy-MM-dd'T'HH:mm:ss.SSSSSSXXX"), p))
+        case MyResult.Ok((s, p)) => MyResult.Ok((DateTime.parse(s, "yyyy-MM-dd'T'HH:mm:ss.SSSXXX"), p))
         case MyResult.Err(e) => MyResult.Err(e)
     }
 }
@@ -272,15 +325,7 @@ public func decode_socket_addr_v6(data: Array<UInt8>, pos: Int64, config: Config
             match (addr as IPv6Address) {
                 case Some(ipv6) =>
                     match (decode_u16(data, p1, config)) {
-                        case MyResult.Ok((port, p2)) =>
-                            match (decode_u32(data, p2, config)) {
-                                case MyResult.Ok((flow_info, p3)) =>
-                                    match (decode_u32(data, p3, config)) {
-                                        case MyResult.Ok((scope_id, p4)) => MyResult.Ok((SocketAddrV6(ipv6, port, flow_info, scope_id), p4))
-                                        case MyResult.Err(e) => MyResult.Err(e)
-                                    }
-                                case MyResult.Err(e) => MyResult.Err(e)
-                            }
+                        case MyResult.Ok((port, p2)) => MyResult.Ok((SocketAddrV6(ipv6, port, 0u32, 0u32), p2))
                         case MyResult.Err(e) => MyResult.Err(e)
                     }
                 case None => MyResult.Err(DecodeError.Other("Expected IPv6Address"))
@@ -294,6 +339,11 @@ public func decode_socket_addr_v6(data: Array<UInt8>, pos: Int64, config: Config
 public func decode_arraylist<T>(data: Array<UInt8>, pos: Int64, config: Config): MyResult<(ArrayList<T>, Int64), DecodeError> where T <: Decode<T> {
     match (decode_u64(data, pos, config)) {
         case MyResult.Ok((len, p)) =>
+            let limitCheck = check_decode_limit(p, 1, config)
+            match (limitCheck) {
+                case MyResult.Err(e) => return MyResult.Err(e)
+                case _ => ()
+            }
             var result = ArrayList<T>()
             var cp = p
             var i: Int64 = 0
@@ -332,6 +382,11 @@ public func decode_array<T>(data: Array<UInt8>, pos: Int64, config: Config): MyR
 public func decode_hashmap<K, V>(data: Array<UInt8>, pos: Int64, config: Config): MyResult<(HashMap<K, V>, Int64), DecodeError> where K <: Decode<K> & Hashable & Equatable<K>, V <: Decode<V> {
     match (decode_u64(data, pos, config)) {
         case MyResult.Ok((len, p)) =>
+            let limitCheck = check_decode_limit(p, 1, config)
+            match (limitCheck) {
+                case MyResult.Err(e) => return MyResult.Err(e)
+                case _ => ()
+            }
             var result = HashMap<K, V>()
             var cp = p
             var i: Int64 = 0
@@ -351,6 +406,11 @@ public func decode_hashmap<K, V>(data: Array<UInt8>, pos: Int64, config: Config)
 public func decode_hashset<T>(data: Array<UInt8>, pos: Int64, config: Config): MyResult<(HashSet<T>, Int64), DecodeError> where T <: Decode<T> & Hashable & Equatable<T> {
     match (decode_u64(data, pos, config)) {
         case MyResult.Ok((len, p)) =>
+            let limitCheck = check_decode_limit(p, 1, config)
+            match (limitCheck) {
+                case MyResult.Err(e) => return MyResult.Err(e)
+                case _ => ()
+            }
             var result = HashSet<T>()
             var cp = p
             var i: Int64 = 0
@@ -383,7 +443,7 @@ public func decode_option<T>(data: Array<UInt8>, pos: Int64, config: Config): My
 }
 
 public func decode_result<T, E>(data: Array<UInt8>, pos: Int64, config: Config): MyResult<(MyResult<T, E>, Int64), DecodeError> where T <: Decode<T>, E <: Decode<E> {
-    match (decode_u8(data, pos)) {
+    match (decode_u32(data, pos, config)) {
         case MyResult.Ok((tag, p)) =>
             if (tag == 0) {
                 match (T.decode(data, p, config)) {
@@ -421,7 +481,7 @@ public func decode_range_inclusive<T>(data: Array<UInt8>, pos: Int64, config: Co
 
 // Bound 解码
 public func decode_bound<T>(data: Array<UInt8>, pos: Int64, config: Config): MyResult<(BoundEnum<T>, Int64), DecodeError> where T <: Decode<T> {
-    match (decode_u8(data, pos)) {
+    match (decode_u32(data, pos, config)) {
         case MyResult.Ok((tag, p)) =>
             if (tag == 0) { MyResult.Ok((BoundEnum.Unbounded, p)) }
             else if (tag == 1) {
@@ -602,3 +662,427 @@ public func decode_tuple8<A, B, C, D, E, F, G, H>(data: Array<UInt8>, pos: Int64
         case MyResult.Err(e) => MyResult.Err(e)
     }
 }
+public func decode_tuple9<A, B, C, D, E, F, G, H, I>(data: Array<UInt8>, pos: Int64, config: Config): MyResult<((A, B, C, D, E, F, G, H, I), Int64), DecodeError> where A <: Decode<A>, B <: Decode<B>, C <: Decode<C>, D <: Decode<D>, E <: Decode<E>, F <: Decode<F>, G <: Decode<G>, H <: Decode<H>, I <: Decode<I> {
+    match (A.decode(data, pos, config)) {
+        case MyResult.Ok((a, p1)) =>
+            match (B.decode(data, p1, config)) {
+                case MyResult.Ok((b, p2)) =>
+                    match (C.decode(data, p2, config)) {
+                        case MyResult.Ok((c, p3)) =>
+                            match (D.decode(data, p3, config)) {
+                                case MyResult.Ok((d, p4)) =>
+                                    match (E.decode(data, p4, config)) {
+                                        case MyResult.Ok((e, p5)) =>
+                                            match (F.decode(data, p5, config)) {
+                                                case MyResult.Ok((f, p6)) =>
+                                                    match (G.decode(data, p6, config)) {
+                                                        case MyResult.Ok((g, p7)) =>
+                                                            match (H.decode(data, p7, config)) {
+                                                                case MyResult.Ok((h, p8)) =>
+                                                                    match (I.decode(data, p8, config)) {
+                                                                        case MyResult.Ok((i, p9)) => MyResult.Ok(((a, b, c, d, e, f, g, h, i), p9))
+                                                                        case MyResult.Err(e) => MyResult.Err(e)
+                                                                    }
+                                                                case MyResult.Err(e) => MyResult.Err(e)
+                                                            }
+                                                        case MyResult.Err(e) => MyResult.Err(e)
+                                                    }
+                                                case MyResult.Err(e) => MyResult.Err(e)
+                                            }
+                                        case MyResult.Err(e) => MyResult.Err(e)
+                                    }
+                                case MyResult.Err(e) => MyResult.Err(e)
+                            }
+                        case MyResult.Err(e) => MyResult.Err(e)
+                    }
+                case MyResult.Err(e) => MyResult.Err(e)
+            }
+        case MyResult.Err(e) => MyResult.Err(e)
+    }
+}
+
+public func decode_tuple10<A, B, C, D, E, F, G, H, I, J>(data: Array<UInt8>, pos: Int64, config: Config): MyResult<((A, B, C, D, E, F, G, H, I, J), Int64), DecodeError> where A <: Decode<A>, B <: Decode<B>, C <: Decode<C>, D <: Decode<D>, E <: Decode<E>, F <: Decode<F>, G <: Decode<G>, H <: Decode<H>, I <: Decode<I>, J <: Decode<J> {
+    match (A.decode(data, pos, config)) {
+        case MyResult.Ok((a, p1)) =>
+            match (B.decode(data, p1, config)) {
+                case MyResult.Ok((b, p2)) =>
+                    match (C.decode(data, p2, config)) {
+                        case MyResult.Ok((c, p3)) =>
+                            match (D.decode(data, p3, config)) {
+                                case MyResult.Ok((d, p4)) =>
+                                    match (E.decode(data, p4, config)) {
+                                        case MyResult.Ok((e, p5)) =>
+                                            match (F.decode(data, p5, config)) {
+                                                case MyResult.Ok((f, p6)) =>
+                                                    match (G.decode(data, p6, config)) {
+                                                        case MyResult.Ok((g, p7)) =>
+                                                            match (H.decode(data, p7, config)) {
+                                                                case MyResult.Ok((h, p8)) =>
+                                                                    match (I.decode(data, p8, config)) {
+                                                                        case MyResult.Ok((i, p9)) =>
+                                                                            match (J.decode(data, p9, config)) {
+                                                                                case MyResult.Ok((j, p10)) => MyResult.Ok(((a, b, c, d, e, f, g, h, i, j), p10))
+                                                                                case MyResult.Err(e) => MyResult.Err(e)
+                                                                            }
+                                                                        case MyResult.Err(e) => MyResult.Err(e)
+                                                                    }
+                                                                case MyResult.Err(e) => MyResult.Err(e)
+                                                            }
+                                                        case MyResult.Err(e) => MyResult.Err(e)
+                                                    }
+                                                case MyResult.Err(e) => MyResult.Err(e)
+                                            }
+                                        case MyResult.Err(e) => MyResult.Err(e)
+                                    }
+                                case MyResult.Err(e) => MyResult.Err(e)
+                            }
+                        case MyResult.Err(e) => MyResult.Err(e)
+                    }
+                case MyResult.Err(e) => MyResult.Err(e)
+            }
+        case MyResult.Err(e) => MyResult.Err(e)
+    }
+}
+
+public func decode_tuple11<A, B, C, D, E, F, G, H, I, J, K>(data: Array<UInt8>, pos: Int64, config: Config): MyResult<((A, B, C, D, E, F, G, H, I, J, K), Int64), DecodeError> where A <: Decode<A>, B <: Decode<B>, C <: Decode<C>, D <: Decode<D>, E <: Decode<E>, F <: Decode<F>, G <: Decode<G>, H <: Decode<H>, I <: Decode<I>, J <: Decode<J>, K <: Decode<K> {
+    match (A.decode(data, pos, config)) {
+        case MyResult.Ok((a, p1)) =>
+            match (B.decode(data, p1, config)) {
+                case MyResult.Ok((b, p2)) =>
+                    match (C.decode(data, p2, config)) {
+                        case MyResult.Ok((c, p3)) =>
+                            match (D.decode(data, p3, config)) {
+                                case MyResult.Ok((d, p4)) =>
+                                    match (E.decode(data, p4, config)) {
+                                        case MyResult.Ok((e, p5)) =>
+                                            match (F.decode(data, p5, config)) {
+                                                case MyResult.Ok((f, p6)) =>
+                                                    match (G.decode(data, p6, config)) {
+                                                        case MyResult.Ok((g, p7)) =>
+                                                            match (H.decode(data, p7, config)) {
+                                                                case MyResult.Ok((h, p8)) =>
+                                                                    match (I.decode(data, p8, config)) {
+                                                                        case MyResult.Ok((i, p9)) =>
+                                                                            match (J.decode(data, p9, config)) {
+                                                                                case MyResult.Ok((j, p10)) =>
+                                                                                    match (K.decode(data, p10, config)) {
+                                                                                        case MyResult.Ok((k, p11)) => MyResult.Ok(((a, b, c, d, e, f, g, h, i, j, k), p11))
+                                                                                        case MyResult.Err(e) => MyResult.Err(e)
+                                                                                    }
+                                                                                case MyResult.Err(e) => MyResult.Err(e)
+                                                                            }
+                                                                        case MyResult.Err(e) => MyResult.Err(e)
+                                                                    }
+                                                                case MyResult.Err(e) => MyResult.Err(e)
+                                                            }
+                                                        case MyResult.Err(e) => MyResult.Err(e)
+                                                    }
+                                                case MyResult.Err(e) => MyResult.Err(e)
+                                            }
+                                        case MyResult.Err(e) => MyResult.Err(e)
+                                    }
+                                case MyResult.Err(e) => MyResult.Err(e)
+                            }
+                        case MyResult.Err(e) => MyResult.Err(e)
+                    }
+                case MyResult.Err(e) => MyResult.Err(e)
+            }
+        case MyResult.Err(e) => MyResult.Err(e)
+    }
+}
+
+public func decode_tuple12<A, B, C, D, E, F, G, H, I, J, K, L>(data: Array<UInt8>, pos: Int64, config: Config): MyResult<((A, B, C, D, E, F, G, H, I, J, K, L), Int64), DecodeError> where A <: Decode<A>, B <: Decode<B>, C <: Decode<C>, D <: Decode<D>, E <: Decode<E>, F <: Decode<F>, G <: Decode<G>, H <: Decode<H>, I <: Decode<I>, J <: Decode<J>, K <: Decode<K>, L <: Decode<L> {
+    match (A.decode(data, pos, config)) {
+        case MyResult.Ok((a, p1)) =>
+            match (B.decode(data, p1, config)) {
+                case MyResult.Ok((b, p2)) =>
+                    match (C.decode(data, p2, config)) {
+                        case MyResult.Ok((c, p3)) =>
+                            match (D.decode(data, p3, config)) {
+                                case MyResult.Ok((d, p4)) =>
+                                    match (E.decode(data, p4, config)) {
+                                        case MyResult.Ok((e, p5)) =>
+                                            match (F.decode(data, p5, config)) {
+                                                case MyResult.Ok((f, p6)) =>
+                                                    match (G.decode(data, p6, config)) {
+                                                        case MyResult.Ok((g, p7)) =>
+                                                            match (H.decode(data, p7, config)) {
+                                                                case MyResult.Ok((h, p8)) =>
+                                                                    match (I.decode(data, p8, config)) {
+                                                                        case MyResult.Ok((i, p9)) =>
+                                                                            match (J.decode(data, p9, config)) {
+                                                                                case MyResult.Ok((j, p10)) =>
+                                                                                    match (K.decode(data, p10, config)) {
+                                                                                        case MyResult.Ok((k, p11)) =>
+                                                                                            match (L.decode(data, p11, config)) {
+                                                                                                case MyResult.Ok((l, p12)) => MyResult.Ok(((a, b, c, d, e, f, g, h, i, j, k, l), p12))
+                                                                                                case MyResult.Err(e) => MyResult.Err(e)
+                                                                                            }
+                                                                                        case MyResult.Err(e) => MyResult.Err(e)
+                                                                                    }
+                                                                                case MyResult.Err(e) => MyResult.Err(e)
+                                                                            }
+                                                                        case MyResult.Err(e) => MyResult.Err(e)
+                                                                    }
+                                                                case MyResult.Err(e) => MyResult.Err(e)
+                                                            }
+                                                        case MyResult.Err(e) => MyResult.Err(e)
+                                                    }
+                                                case MyResult.Err(e) => MyResult.Err(e)
+                                            }
+                                        case MyResult.Err(e) => MyResult.Err(e)
+                                    }
+                                case MyResult.Err(e) => MyResult.Err(e)
+                            }
+                        case MyResult.Err(e) => MyResult.Err(e)
+                    }
+                case MyResult.Err(e) => MyResult.Err(e)
+            }
+        case MyResult.Err(e) => MyResult.Err(e)
+    }
+}
+
+public func decode_tuple13<A, B, C, D, E, F, G, H, I, J, K, L, M>(data: Array<UInt8>, pos: Int64, config: Config): MyResult<((A, B, C, D, E, F, G, H, I, J, K, L, M), Int64), DecodeError> where A <: Decode<A>, B <: Decode<B>, C <: Decode<C>, D <: Decode<D>, E <: Decode<E>, F <: Decode<F>, G <: Decode<G>, H <: Decode<H>, I <: Decode<I>, J <: Decode<J>, K <: Decode<K>, L <: Decode<L>, M <: Decode<M> {
+    match (A.decode(data, pos, config)) {
+        case MyResult.Ok((a, p1)) =>
+            match (B.decode(data, p1, config)) {
+                case MyResult.Ok((b, p2)) =>
+                    match (C.decode(data, p2, config)) {
+                        case MyResult.Ok((c, p3)) =>
+                            match (D.decode(data, p3, config)) {
+                                case MyResult.Ok((d, p4)) =>
+                                    match (E.decode(data, p4, config)) {
+                                        case MyResult.Ok((e, p5)) =>
+                                            match (F.decode(data, p5, config)) {
+                                                case MyResult.Ok((f, p6)) =>
+                                                    match (G.decode(data, p6, config)) {
+                                                        case MyResult.Ok((g, p7)) =>
+                                                            match (H.decode(data, p7, config)) {
+                                                                case MyResult.Ok((h, p8)) =>
+                                                                    match (I.decode(data, p8, config)) {
+                                                                        case MyResult.Ok((i, p9)) =>
+                                                                            match (J.decode(data, p9, config)) {
+                                                                                case MyResult.Ok((j, p10)) =>
+                                                                                    match (K.decode(data, p10, config)) {
+                                                                                        case MyResult.Ok((k, p11)) =>
+                                                                                            match (L.decode(data, p11, config)) {
+                                                                                                case MyResult.Ok((l, p12)) =>
+                                                                                                    match (M.decode(data, p12, config)) {
+                                                                                                        case MyResult.Ok((m, p13)) => MyResult.Ok(((a, b, c, d, e, f, g, h, i, j, k, l, m), p13))
+                                                                                                        case MyResult.Err(e) => MyResult.Err(e)
+                                                                                                    }
+                                                                                                case MyResult.Err(e) => MyResult.Err(e)
+                                                                                            }
+                                                                                        case MyResult.Err(e) => MyResult.Err(e)
+                                                                                    }
+                                                                                case MyResult.Err(e) => MyResult.Err(e)
+                                                                            }
+                                                                        case MyResult.Err(e) => MyResult.Err(e)
+                                                                    }
+                                                                case MyResult.Err(e) => MyResult.Err(e)
+                                                            }
+                                                        case MyResult.Err(e) => MyResult.Err(e)
+                                                    }
+                                                case MyResult.Err(e) => MyResult.Err(e)
+                                            }
+                                        case MyResult.Err(e) => MyResult.Err(e)
+                                    }
+                                case MyResult.Err(e) => MyResult.Err(e)
+                            }
+                        case MyResult.Err(e) => MyResult.Err(e)
+                    }
+                case MyResult.Err(e) => MyResult.Err(e)
+            }
+        case MyResult.Err(e) => MyResult.Err(e)
+    }
+}
+
+public func decode_tuple14<A, B, C, D, E, F, G, H, I, J, K, L, M, N>(data: Array<UInt8>, pos: Int64, config: Config): MyResult<((A, B, C, D, E, F, G, H, I, J, K, L, M, N), Int64), DecodeError> where A <: Decode<A>, B <: Decode<B>, C <: Decode<C>, D <: Decode<D>, E <: Decode<E>, F <: Decode<F>, G <: Decode<G>, H <: Decode<H>, I <: Decode<I>, J <: Decode<J>, K <: Decode<K>, L <: Decode<L>, M <: Decode<M>, N <: Decode<N> {
+    match (A.decode(data, pos, config)) {
+        case MyResult.Ok((a, p1)) =>
+            match (B.decode(data, p1, config)) {
+                case MyResult.Ok((b, p2)) =>
+                    match (C.decode(data, p2, config)) {
+                        case MyResult.Ok((c, p3)) =>
+                            match (D.decode(data, p3, config)) {
+                                case MyResult.Ok((d, p4)) =>
+                                    match (E.decode(data, p4, config)) {
+                                        case MyResult.Ok((e, p5)) =>
+                                            match (F.decode(data, p5, config)) {
+                                                case MyResult.Ok((f, p6)) =>
+                                                    match (G.decode(data, p6, config)) {
+                                                        case MyResult.Ok((g, p7)) =>
+                                                            match (H.decode(data, p7, config)) {
+                                                                case MyResult.Ok((h, p8)) =>
+                                                                    match (I.decode(data, p8, config)) {
+                                                                        case MyResult.Ok((i, p9)) =>
+                                                                            match (J.decode(data, p9, config)) {
+                                                                                case MyResult.Ok((j, p10)) =>
+                                                                                    match (K.decode(data, p10, config)) {
+                                                                                        case MyResult.Ok((k, p11)) =>
+                                                                                            match (L.decode(data, p11, config)) {
+                                                                                                case MyResult.Ok((l, p12)) =>
+                                                                                                    match (M.decode(data, p12, config)) {
+                                                                                                        case MyResult.Ok((m, p13)) =>
+                                                                                                            match (N.decode(data, p13, config)) {
+                                                                                                                case MyResult.Ok((n, p14)) => MyResult.Ok(((a, b, c, d, e, f, g, h, i, j, k, l, m, n), p14))
+                                                                                                                case MyResult.Err(e) => MyResult.Err(e)
+                                                                                                            }
+                                                                                                        case MyResult.Err(e) => MyResult.Err(e)
+                                                                                                    }
+                                                                                                case MyResult.Err(e) => MyResult.Err(e)
+                                                                                            }
+                                                                                        case MyResult.Err(e) => MyResult.Err(e)
+                                                                                    }
+                                                                                case MyResult.Err(e) => MyResult.Err(e)
+                                                                            }
+                                                                        case MyResult.Err(e) => MyResult.Err(e)
+                                                                    }
+                                                                case MyResult.Err(e) => MyResult.Err(e)
+                                                            }
+                                                        case MyResult.Err(e) => MyResult.Err(e)
+                                                    }
+                                                case MyResult.Err(e) => MyResult.Err(e)
+                                            }
+                                        case MyResult.Err(e) => MyResult.Err(e)
+                                    }
+                                case MyResult.Err(e) => MyResult.Err(e)
+                            }
+                        case MyResult.Err(e) => MyResult.Err(e)
+                    }
+                case MyResult.Err(e) => MyResult.Err(e)
+            }
+        case MyResult.Err(e) => MyResult.Err(e)
+    }
+}
+
+public func decode_tuple15<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O>(data: Array<UInt8>, pos: Int64, config: Config): MyResult<((A, B, C, D, E, F, G, H, I, J, K, L, M, N, O), Int64), DecodeError> where A <: Decode<A>, B <: Decode<B>, C <: Decode<C>, D <: Decode<D>, E <: Decode<E>, F <: Decode<F>, G <: Decode<G>, H <: Decode<H>, I <: Decode<I>, J <: Decode<J>, K <: Decode<K>, L <: Decode<L>, M <: Decode<M>, N <: Decode<N>, O <: Decode<O> {
+    match (A.decode(data, pos, config)) {
+        case MyResult.Ok((a, p1)) =>
+            match (B.decode(data, p1, config)) {
+                case MyResult.Ok((b, p2)) =>
+                    match (C.decode(data, p2, config)) {
+                        case MyResult.Ok((c, p3)) =>
+                            match (D.decode(data, p3, config)) {
+                                case MyResult.Ok((d, p4)) =>
+                                    match (E.decode(data, p4, config)) {
+                                        case MyResult.Ok((e, p5)) =>
+                                            match (F.decode(data, p5, config)) {
+                                                case MyResult.Ok((f, p6)) =>
+                                                    match (G.decode(data, p6, config)) {
+                                                        case MyResult.Ok((g, p7)) =>
+                                                            match (H.decode(data, p7, config)) {
+                                                                case MyResult.Ok((h, p8)) =>
+                                                                    match (I.decode(data, p8, config)) {
+                                                                        case MyResult.Ok((i, p9)) =>
+                                                                            match (J.decode(data, p9, config)) {
+                                                                                case MyResult.Ok((j, p10)) =>
+                                                                                    match (K.decode(data, p10, config)) {
+                                                                                        case MyResult.Ok((k, p11)) =>
+                                                                                            match (L.decode(data, p11, config)) {
+                                                                                                case MyResult.Ok((l, p12)) =>
+                                                                                                    match (M.decode(data, p12, config)) {
+                                                                                                        case MyResult.Ok((m, p13)) =>
+                                                                                                            match (N.decode(data, p13, config)) {
+                                                                                                                case MyResult.Ok((n, p14)) =>
+                                                                                                                    match (O.decode(data, p14, config)) {
+                                                                                                                        case MyResult.Ok((o, p15)) => MyResult.Ok(((a, b, c, d, e, f, g, h, i, j, k, l, m, n, o), p15))
+                                                                                                                        case MyResult.Err(e) => MyResult.Err(e)
+                                                                                                                    }
+                                                                                                                case MyResult.Err(e) => MyResult.Err(e)
+                                                                                                            }
+                                                                                                        case MyResult.Err(e) => MyResult.Err(e)
+                                                                                                    }
+                                                                                                case MyResult.Err(e) => MyResult.Err(e)
+                                                                                            }
+                                                                                        case MyResult.Err(e) => MyResult.Err(e)
+                                                                                    }
+                                                                                case MyResult.Err(e) => MyResult.Err(e)
+                                                                            }
+                                                                        case MyResult.Err(e) => MyResult.Err(e)
+                                                                    }
+                                                                case MyResult.Err(e) => MyResult.Err(e)
+                                                            }
+                                                        case MyResult.Err(e) => MyResult.Err(e)
+                                                    }
+                                                case MyResult.Err(e) => MyResult.Err(e)
+                                            }
+                                        case MyResult.Err(e) => MyResult.Err(e)
+                                    }
+                                case MyResult.Err(e) => MyResult.Err(e)
+                            }
+                        case MyResult.Err(e) => MyResult.Err(e)
+                    }
+                case MyResult.Err(e) => MyResult.Err(e)
+            }
+        case MyResult.Err(e) => MyResult.Err(e)
+    }
+}
+
+public func decode_tuple16<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P>(data: Array<UInt8>, pos: Int64, config: Config): MyResult<((A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P), Int64), DecodeError> where A <: Decode<A>, B <: Decode<B>, C <: Decode<C>, D <: Decode<D>, E <: Decode<E>, F <: Decode<F>, G <: Decode<G>, H <: Decode<H>, I <: Decode<I>, J <: Decode<J>, K <: Decode<K>, L <: Decode<L>, M <: Decode<M>, N <: Decode<N>, O <: Decode<O>, P <: Decode<P> {
+    match (A.decode(data, pos, config)) {
+        case MyResult.Ok((a, p1)) =>
+            match (B.decode(data, p1, config)) {
+                case MyResult.Ok((b, p2)) =>
+                    match (C.decode(data, p2, config)) {
+                        case MyResult.Ok((c, p3)) =>
+                            match (D.decode(data, p3, config)) {
+                                case MyResult.Ok((d, p4)) =>
+                                    match (E.decode(data, p4, config)) {
+                                        case MyResult.Ok((e, p5)) =>
+                                            match (F.decode(data, p5, config)) {
+                                                case MyResult.Ok((f, p6)) =>
+                                                    match (G.decode(data, p6, config)) {
+                                                        case MyResult.Ok((g, p7)) =>
+                                                            match (H.decode(data, p7, config)) {
+                                                                case MyResult.Ok((h, p8)) =>
+                                                                    match (I.decode(data, p8, config)) {
+                                                                        case MyResult.Ok((i, p9)) =>
+                                                                            match (J.decode(data, p9, config)) {
+                                                                                case MyResult.Ok((j, p10)) =>
+                                                                                    match (K.decode(data, p10, config)) {
+                                                                                        case MyResult.Ok((k, p11)) =>
+                                                                                            match (L.decode(data, p11, config)) {
+                                                                                                case MyResult.Ok((l, p12)) =>
+                                                                                                    match (M.decode(data, p12, config)) {
+                                                                                                        case MyResult.Ok((m, p13)) =>
+                                                                                                            match (N.decode(data, p13, config)) {
+                                                                                                                case MyResult.Ok((n, p14)) =>
+                                                                                                                    match (O.decode(data, p14, config)) {
+                                                                                                                        case MyResult.Ok((o, p15)) =>
+                                                                                                                            match (P.decode(data, p15, config)) {
+                                                                                                                                case MyResult.Ok((p, p16)) => MyResult.Ok(((a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p), p16))
+                                                                                                                                case MyResult.Err(e) => MyResult.Err(e)
+                                                                                                                            }
+                                                                                                                        case MyResult.Err(e) => MyResult.Err(e)
+                                                                                                                    }
+                                                                                                                case MyResult.Err(e) => MyResult.Err(e)
+                                                                                                            }
+                                                                                                        case MyResult.Err(e) => MyResult.Err(e)
+                                                                                                    }
+                                                                                                case MyResult.Err(e) => MyResult.Err(e)
+                                                                                            }
+                                                                                        case MyResult.Err(e) => MyResult.Err(e)
+                                                                                    }
+                                                                                case MyResult.Err(e) => MyResult.Err(e)
+                                                                            }
+                                                                        case MyResult.Err(e) => MyResult.Err(e)
+                                                                    }
+                                                                case MyResult.Err(e) => MyResult.Err(e)
+                                                            }
+                                                        case MyResult.Err(e) => MyResult.Err(e)
+                                                    }
+                                                case MyResult.Err(e) => MyResult.Err(e)
+                                            }
+                                        case MyResult.Err(e) => MyResult.Err(e)
+                                    }
+                                case MyResult.Err(e) => MyResult.Err(e)
+                            }
+                        case MyResult.Err(e) => MyResult.Err(e)
+                    }
+                case MyResult.Err(e) => MyResult.Err(e)
+            }
+        case MyResult.Err(e) => MyResult.Err(e)
+    }
+}
+

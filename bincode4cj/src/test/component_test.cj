@@ -119,7 +119,7 @@ public class ComponentTests {
     @TestCase
     public func test_varint_encode_u32_u16() {
         let buf = ArrayList<UInt8>()
-        varint_encode_u32(1000u32, buf)
+        varint_encode_u32(1000u32, Endianness.Little, buf)
         @Expect(buf.size, 3)
         @Expect(buf[0], 251u8)
     }
@@ -127,7 +127,7 @@ public class ComponentTests {
     @TestCase
     public func test_varint_encode_u32_u32() {
         let buf = ArrayList<UInt8>()
-        varint_encode_u32(100000u32, buf)
+        varint_encode_u32(100000u32, Endianness.Little, buf)
         @Expect(buf.size, 5)
         @Expect(buf[0], 252u8)
     }
@@ -135,14 +135,14 @@ public class ComponentTests {
     @TestCase
     public func test_varint_encode_u64_small() {
         let buf = ArrayList<UInt8>()
-        varint_encode_u64(42u64, buf)
+        varint_encode_u64(42u64, Endianness.Little, buf)
         @Expect(buf.size, 1)
     }
 
     @TestCase
     public func test_varint_encode_u64_large() {
         let buf = ArrayList<UInt8>()
-        varint_encode_u64(10000000000u64, buf)
+        varint_encode_u64(10000000000u64, Endianness.Little, buf)
         @Expect(buf.size, 9)
         @Expect(buf[0], 253u8)
     }
@@ -224,7 +224,7 @@ public class ComponentTests {
     @TestCase
     public func test_uint128_varint_encode() {
         let buf = ArrayList<UInt8>()
-        varint_encode_u128(UInt128(42, 0), buf)
+        varint_encode_u128(UInt128(42, 0), Endianness.Little, buf)
         @Expect(buf.size, 1)
     }
 
@@ -301,8 +301,8 @@ public class ComponentTests {
     // === Varint decode roundtrip ===
     @TestCase
     public func test_varint_decode_u16() {
-        let buf = ArrayList<UInt8>(); varint_encode_u16(42u16, buf)
-        match (varint_decode_u16(buf.toArray(), 0)) {
+        let buf = ArrayList<UInt8>(); varint_encode_u16(42u16, Endianness.Little, buf)
+        match (varint_decode_u16(buf.toArray(), 0, Endianness.Little)) {
             case MyResult.Ok((v, _)) => @Expect(v, 42u16)
             case _ => @Expect(false)
         }
@@ -310,8 +310,8 @@ public class ComponentTests {
 
     @TestCase
     public func test_varint_decode_u32() {
-        let buf = ArrayList<UInt8>(); varint_encode_u32(42u32, buf)
-        match (varint_decode_u32(buf.toArray(), 0)) {
+        let buf = ArrayList<UInt8>(); varint_encode_u32(42u32, Endianness.Little, buf)
+        match (varint_decode_u32(buf.toArray(), 0, Endianness.Little)) {
             case MyResult.Ok((v, _)) => @Expect(v, 42u32)
             case _ => @Expect(false)
         }
@@ -319,8 +319,8 @@ public class ComponentTests {
 
     @TestCase
     public func test_varint_decode_u64() {
-        let buf = ArrayList<UInt8>(); varint_encode_u64(42u64, buf)
-        match (varint_decode_u64(buf.toArray(), 0)) {
+        let buf = ArrayList<UInt8>(); varint_encode_u64(42u64, Endianness.Little, buf)
+        match (varint_decode_u64(buf.toArray(), 0, Endianness.Little)) {
             case MyResult.Ok((v, _)) => @Expect(v, 42u64)
             case _ => @Expect(false)
         }
@@ -328,8 +328,8 @@ public class ComponentTests {
 
     @TestCase
     public func test_varint_decode_usize() {
-        let buf = ArrayList<UInt8>(); varint_encode_usize(42u64, buf)
-        match (varint_decode_usize(buf.toArray(), 0)) {
+        let buf = ArrayList<UInt8>(); varint_encode_usize(42u64, Endianness.Little, buf)
+        match (varint_decode_usize(buf.toArray(), 0, Endianness.Little)) {
             case MyResult.Ok((v, _)) => @Expect(v, 42u64)
             case _ => @Expect(false)
         }
@@ -337,8 +337,8 @@ public class ComponentTests {
 
     @TestCase
     public func test_varint_decode_isize() {
-        let buf = ArrayList<UInt8>(); varint_encode_isize(42i64, buf)
-        match (varint_decode_isize(buf.toArray(), 0)) {
+        let buf = ArrayList<UInt8>(); varint_encode_isize(42i64, Endianness.Little, buf)
+        match (varint_decode_isize(buf.toArray(), 0, Endianness.Little)) {
             case MyResult.Ok((v, _)) => @Expect(v, 42i64)
             case _ => @Expect(false)
         }
@@ -346,8 +346,8 @@ public class ComponentTests {
 
     @TestCase
     public func test_varint_decode_i16() {
-        let buf = ArrayList<UInt8>(); varint_encode_i16(42i16, buf)
-        match (varint_decode_i16(buf.toArray(), 0)) {
+        let buf = ArrayList<UInt8>(); varint_encode_i16(42i16, Endianness.Little, buf)
+        match (varint_decode_i16(buf.toArray(), 0, Endianness.Little)) {
             case MyResult.Ok((v, _)) => @Expect(v, 42i16)
             case _ => @Expect(false)
         }
@@ -355,8 +355,8 @@ public class ComponentTests {
 
     @TestCase
     public func test_varint_decode_i32() {
-        let buf = ArrayList<UInt8>(); varint_encode_i32(42i32, buf)
-        match (varint_decode_i32(buf.toArray(), 0)) {
+        let buf = ArrayList<UInt8>(); varint_encode_i32(42i32, Endianness.Little, buf)
+        match (varint_decode_i32(buf.toArray(), 0, Endianness.Little)) {
             case MyResult.Ok((v, _)) => @Expect(v, 42i32)
             case _ => @Expect(false)
         }
@@ -364,8 +364,8 @@ public class ComponentTests {
 
     @TestCase
     public func test_varint_decode_i64() {
-        let buf = ArrayList<UInt8>(); varint_encode_i64(42i64, buf)
-        match (varint_decode_i64(buf.toArray(), 0)) {
+        let buf = ArrayList<UInt8>(); varint_encode_i64(42i64, Endianness.Little, buf)
+        match (varint_decode_i64(buf.toArray(), 0, Endianness.Little)) {
             case MyResult.Ok((v, _)) => @Expect(v, 42i64)
             case _ => @Expect(false)
         }
@@ -373,8 +373,8 @@ public class ComponentTests {
 
     @TestCase
     public func test_varint_decode_u128() {
-        let buf = ArrayList<UInt8>(); varint_encode_u128(UInt128(42, 0), buf)
-        match (varint_decode_u128(buf.toArray(), 0)) {
+        let buf = ArrayList<UInt8>(); varint_encode_u128(UInt128(42, 0), Endianness.Little, buf)
+        match (varint_decode_u128(buf.toArray(), 0, Endianness.Little)) {
             case MyResult.Ok((v, _)) => @Expect(v.to_u64(), 42u64)
             case _ => @Expect(false)
         }
@@ -487,8 +487,8 @@ public class ComponentTests {
     @TestCase
     public func test_varint_u32_large() {
         let buf = ArrayList<UInt8>()
-        varint_encode_u32(100000u32, buf)
-        match (varint_decode_u32(buf.toArray(), 0)) {
+        varint_encode_u32(100000u32, Endianness.Little, buf)
+        match (varint_decode_u32(buf.toArray(), 0, Endianness.Little)) {
             case MyResult.Ok((v, _)) => @Expect(v, 100000u32)
             case _ => @Expect(false)
         }
@@ -497,8 +497,8 @@ public class ComponentTests {
     @TestCase
     public func test_varint_u64_large() {
         let buf = ArrayList<UInt8>()
-        varint_encode_u64(10000000000u64, buf)
-        match (varint_decode_u64(buf.toArray(), 0)) {
+        varint_encode_u64(10000000000u64, Endianness.Little, buf)
+        match (varint_decode_u64(buf.toArray(), 0, Endianness.Little)) {
             case MyResult.Ok((v, _)) => @Expect(v, 10000000000u64)
             case _ => @Expect(false)
         }
@@ -507,8 +507,8 @@ public class ComponentTests {
     @TestCase
     public func test_varint_u128_large() {
         let buf = ArrayList<UInt8>()
-        varint_encode_u128(UInt128(100, 1), buf)
-        match (varint_decode_u128(buf.toArray(), 0)) {
+        varint_encode_u128(UInt128(100, 1), Endianness.Little, buf)
+        match (varint_decode_u128(buf.toArray(), 0, Endianness.Little)) {
             case MyResult.Ok((v, _)) => @Expect(v.hi, 1u64)
             case _ => @Expect(false)
         }
@@ -518,7 +518,7 @@ public class ComponentTests {
     public func test_varint_decode_u32_u16_path() {
         // 252 = U16_BYTE, then 2 bytes LE = 300
         let data: Array<UInt8> = [251u8, 44u8, 1u8]
-        match (varint_decode_u32(data, 0)) {
+        match (varint_decode_u32(data, 0, Endianness.Little)) {
             case MyResult.Ok((v, _)) => @Expect(v, 300u32)
             case _ => @Expect(false)
         }
@@ -528,7 +528,7 @@ public class ComponentTests {
     public func test_varint_decode_u64_u32_path() {
         // 252 = U32_BYTE, then 4 bytes LE = 70000
         let data: Array<UInt8> = [252u8, 0x70, 0x11, 0x01, 0x00]
-        match (varint_decode_u64(data, 0)) {
+        match (varint_decode_u64(data, 0, Endianness.Little)) {
             case MyResult.Ok((v, _)) => @Expect(v, 70000u64)
             case _ => @Expect(false)
         }
@@ -538,7 +538,7 @@ public class ComponentTests {
     public func test_varint_decode_u128_u16_path() {
         // 251 = U16_BYTE, then 2 bytes LE = 300
         let data: Array<UInt8> = [251u8, 44u8, 1u8]
-        match (varint_decode_u128(data, 0)) {
+        match (varint_decode_u128(data, 0, Endianness.Little)) {
             case MyResult.Ok((v, _)) => @Expect(v.lo, 300u64)
             case _ => @Expect(false)
         }
@@ -548,7 +548,7 @@ public class ComponentTests {
     public func test_varint_decode_u128_u64_path() {
         // 253 = U64_BYTE, then 8 bytes LE = 5000000000
         let data: Array<UInt8> = [253u8, 0x00, 0xF2, 0x05, 0x2A, 0x01, 0x00, 0x00, 0x00]
-        match (varint_decode_u128(data, 0)) {
+        match (varint_decode_u128(data, 0, Endianness.Little)) {
             case MyResult.Ok((v, _)) => @Expect(v.hi, 0u64)
             case _ => @Expect(false)
         }
@@ -558,7 +558,7 @@ public class ComponentTests {
     public func test_varint_decode_u128_u128_path() {
         // 254 = U128_BYTE, then 16 bytes LE = large value
         let data: Array<UInt8> = [254u8, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]
-        match (varint_decode_u128(data, 0)) {
+        match (varint_decode_u128(data, 0, Endianness.Little)) {
             case MyResult.Ok((v, _)) => @Expect(v.lo, 0xFFFFFFFFFFFFFFFFu64)
             case _ => @Expect(false)
         }
@@ -569,7 +569,7 @@ public class ComponentTests {
         @Expect(decode_integer_type(251u8), IntegerType.U16)
         @Expect(decode_integer_type(252u8), IntegerType.U32)
         @Expect(decode_integer_type(253u8), IntegerType.U64)
-        @Expect(decode_integer_type(254u8), IntegerType.Reserved)
+        @Expect(decode_integer_type(254u8), IntegerType.U128)
         @Expect(decode_integer_type(255u8), IntegerType.Reserved)
     }
 
@@ -577,7 +577,7 @@ public class ComponentTests {
     public func test_varint_decode_u64_u16_path() {
         // 251 = U16_BYTE, then 2 bytes LE = 300
         let data: Array<UInt8> = [251u8, 44u8, 1u8]
-        match (varint_decode_u64(data, 0)) {
+        match (varint_decode_u64(data, 0, Endianness.Little)) {
             case MyResult.Ok((v, _)) => @Expect(v, 300u64)
             case _ => @Expect(false)
         }
@@ -587,7 +587,7 @@ public class ComponentTests {
     public func test_varint_decode_u128_u32_path() {
         // 252 = U32_BYTE, then 4 bytes LE = 70000
         let data: Array<UInt8> = [252u8, 0x70, 0x11, 0x01, 0x00]
-        match (varint_decode_u128(data, 0)) {
+        match (varint_decode_u128(data, 0, Endianness.Little)) {
             case MyResult.Ok((v, _)) => @Expect(v.lo, 70000u64)
             case _ => @Expect(false)
         }
@@ -597,7 +597,7 @@ public class ComponentTests {
     public func test_varint_decode_u128_invalid_tag() {
         // 255 = invalid tag for u128 decode
         let data: Array<UInt8> = [255u8]
-        match (varint_decode_u128(data, 0)) {
+        match (varint_decode_u128(data, 0, Endianness.Little)) {
             case MyResult.Err(_) => @Expect(true)
             case _ => @Expect(false)
         }

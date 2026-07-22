@@ -3,7 +3,7 @@
 [![Cangjie](https://img.shields.io/badge/Cangjie-1.0.5-blue)](https://cangjie-lang.cn)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 [![Build](https://img.shields.io/badge/build-passing-brightgreen)](https://gitcode.com/lifumin_gitcode/bincode4cj)
-[![Tests](https://img.shields.io/badge/tests-391%20passed-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-957%20passed-brightgreen)]()
 
 Rust [bincode 2.0.1](https://github.com/bincode-org/bincode) 序列化库的仓颉语言迁移版本。**≈98% 功能迁移完成**，所有不可直接迁移的特性均通过平替方案实现。
 
@@ -35,8 +35,8 @@ bincode4cj 是 Rust 生态中广泛使用的二进制序列化库 [bincode](http
 | 指标 | 值 |
 |------|-----|
 | 功能性 API 迁移率 | **≈98%** |
-| 测试用例 | **391 个，全部通过** |
-| 行覆盖率 | **83.3%** |
+| 测试用例 | **957 个，全部通过** |
+| 行覆盖率 | **87.8%** |
 | 构建状态 | **0 errors, 7 warnings** |
 
 ---
@@ -55,7 +55,7 @@ bincode4cj 是 Rust 生态中广泛使用的二进制序列化库 [bincode](http
 
 - ✅ `ArrayList<T>` / `HashMap<K,V>` / `HashSet<T>` / `Option<T>` / `Array<T>` / `MyResult<T,E>`
 - ✅ `Range` / `RangeInclusive` / `BoundEnum<T>` 编解码
-- ✅ 元组编解码：支持 1-8 元组
+- ✅ 元组编解码：支持 1-16 元组
 
 ### 扩展类型
 
@@ -171,7 +171,7 @@ let config = standard
 |------|------|
 | 基本类型 | `encode_bool`, `encode_u8`/`u16`/`u32`/`u64`, `encode_i8`/`i16`/`i32`/`i64`, `encode_f32`/`f64`, `encode_string`, `encode_char`, `encode_duration` |
 | 容器 | `encode_arraylist`, `encode_array`, `encode_hashmap`, `encode_hashset`, `encode_option`, `encode_result`, `encode_bound`, `encode_range_custom`, `encode_range_inclusive` |
-| 元组 | `encode_tuple1` ~ `encode_tuple8` |
+| 元组 | `encode_tuple1` ~ `encode_tuple16` |
 | 网络/路径 | `encode_path`, `encode_ipv4_address`, `encode_ip_address`, `encode_ipv6_address`, `encode_ip_socket_address`, `encode_socket_addr_v4`, `encode_socket_addr_v6` |
 | 时间 | `encode_date_time` |
 | 原子类型 | `encode_atomic_bool`, `encode_atomic_uint8`/`16`/`32`/`64`, `encode_atomic_int8`/`16`/`32`/`64`, `encode_atomic_usize`, `encode_atomic_isize` |
@@ -182,7 +182,7 @@ let config = standard
 |------|------|
 | 基本类型 | `decode_bool`, `decode_u8`/`u16`/`u32`/`u64`, `decode_i8`/`i16`/`i32`/`i64`, `decode_f32`/`f64`, `decode_string`, `decode_char`, `decode_duration` |
 | 容器 | `decode_arraylist`, `decode_array`, `decode_hashmap`, `decode_hashset`, `decode_option`, `decode_result`, `decode_bound`, `decode_range_custom`, `decode_range_inclusive` |
-| 元组 | `decode_tuple1` ~ `decode_tuple8` |
+| 元组 | `decode_tuple1` ~ `decode_tuple16` |
 | 网络/路径 | `decode_path`, `decode_ipv4_address`, `decode_ip_address`, `decode_ipv6_address`, `decode_ip_socket_address`, `decode_socket_addr_v4`, `decode_socket_addr_v6` |
 | 时间 | `decode_date_time` |
 | 原子类型 | `decode_atomic_bool`, `decode_atomic_uint8`/`16`/`32`/`64`, `decode_atomic_int8`/`16`/`32`/`64`, `decode_atomic_usize`, `decode_atomic_isize` |
@@ -213,9 +213,8 @@ bincode4cj/
 │   ├── assets/                 # 架构图
 │   ├── cjcov/                  # 覆盖率报告
 │   ├── design.md               # 设计文档
-│   ├── feature_api.md          # API 参考
-│   └── migration_coverage.md   # 迁移覆盖率报告
-├── src/                        # 源码 (15 文件, ~2900 行)
+│   └── feature_api.md          # API 参考
+├── src/                        # 源码 (15 文件, ~3450 行)
 │   ├── config.cj               # 配置系统
 │   ├── error.cj                # 错误类型 + MyResult
 │   ├── conv.cj                 # 类型转换辅助 (40+ 函数)
@@ -230,8 +229,10 @@ bincode4cj/
 │   ├── interface.cj            # Encode/Decode 接口
 │   ├── serde_interface.cj      # Serialize/Deserialize 接口
 │   ├── serde_compat.cj         # Compat 包装器
-│   └── lib.cj                  # 顶层 API
-│   └── test/                   # 测试用例 (18 文件, 391 用例)
+│   ├── lib.cj                  # 顶层 API
+│   ├── bincode4cj-derive/      # derive 宏子包
+│   │   └── src/derive.cj       # @Encode/@Decode 宏实现
+│   └── test/                   # 测试用例 (28 文件, 957 用例)
 │       ├── config_test.cj      # 配置系统测试
 │       ├── error_test.cj       # 错误类型测试
 │       ├── builtins_test.cj    # 自建包装类型测试
@@ -239,12 +240,18 @@ bincode4cj/
 │       ├── lib_test.cj         # 顶层 API 测试
 │       ├── component_test.cj   # 组件测试
 │       ├── conv_test.cj        # 类型转换测试
+│       ├── varint_be_test.cj   # varint 大端测试
+│       ├── collection_decode_test.cj # 集合 Decode 测试
+│       ├── coverage_test.cj    # 覆盖率补充测试
+│       ├── derive_test.cj      # derive 宏测试
 │       ├── ...                 # 更多测试文件
+├── .gitignore                  # Git 忽略配置
 ├── CHANGELOG.md                # 更新日志
 ├── LICENSE                     # 开源协议
 ├── README.OpenSource           # 上游仓库开源信息
 ├── README.md                   # 本文件
-└── cjpm.toml                   # 项目配置
+├── cjpm.toml                   # 项目配置
+└── cjpm.lock                   # 依赖锁定
 ```
 
 ---
@@ -262,7 +269,7 @@ bincode4cj/
 | `CString`, `Mutex<T>`, `RwLock<T>`, `PhantomData<T>` | `CString`, `SyncMutex<T>`, `RwLock_<T>`, `PhantomData<T>` | `builtins.cj` | ✅ |
 | `SocketAddrV4`, `SocketAddrV6` | `SocketAddrV4`, `SocketAddrV6` | `builtins.cj` | ✅ |
 | `Box<str>`, `Box<[T]>`, `Rc<str>`, `Arc<str>` | `BoxedStr`, `BoxedSlice<T>`, `RefCountedStr`, `AtomicRefCountedStr` | `builtins.cj` | ✅ |
-| `BinaryHeap<T>`, `VecDeque<T>`, `BTreeMap<K,V>`, `BTreeSet<T>` | `BinaryHeap<T>`, `VecDeque<T>`, `BTreeMap<K,V>`, `BTreeSet<T>` | `builtins.cj` | ⚠️ 仅包装类 |
+| `BinaryHeap<T>`, `VecDeque<T>`, `BTreeMap<K,V>`, `BTreeSet<T>` | `BinaryHeap<T>`, `VecDeque<T>`, `BTreeMap<K,V>`, `BTreeSet<T>` | `builtins.cj` | ✅ |
 | `Encode`/`Decode` trait | `extend T <: Encode/Decode<T>` (30+ 类型) | `impl_interface.cj` | ✅ |
 | `u128` varint | `varint_encode_u128`/`varint_decode_u128` (基于 `UInt128` 类) | `varint.cj` | ✅ |
 
@@ -288,7 +295,7 @@ cjpm build
 cjpm test
 ```
 
-当前 **391 个测试用例，全部通过**（0 FAILED, 0 ERROR）。
+当前 **957 个测试用例，全部通过**（0 FAILED, 0 ERROR）。
 
 ### 覆盖率
 
@@ -298,7 +305,7 @@ cjpm test --coverage
 cjcov -r . -o cov_output --html-details -s src/
 ```
 
-当前行覆盖率 **83.3%**（13 个生产文件，其中 10 个 ≥80%）。
+当前行覆盖率 **87.8%**（15 个生产文件，其中 12 个 ≥80%）。
 
 ---
 
@@ -307,10 +314,8 @@ cjcov -r . -o cov_output --html-details -s src/
 | 限制 | 原因 | 影响范围 |
 |------|------|---------|
 | `BorrowDecode` 不支持 | Cangjie 无生命周期系统 | 零拷贝解码不可用，全部转为 owned 拷贝 |
-| 9-16 元组不支持 | Cangjie 不支持 >8 元组字面量 | 大元组无法编解码，可用嵌套元组替代 |
 | `const Limit<N>` 不支持 | Cangjie 不支持 const 泛型 | 编译期字节限制不可用，可在运行时手动检查 |
 | `i128` 原生类型不支持 | Cangjie 1.0.5 无 128 位整数 | 通过自定义 `UInt128` 类替代 |
-| 集合类型无泛型 Encode/Decode | 仓颉泛型类型推断限制 | `BinaryHeap`/`VecDeque`/`BTreeMap`/`BTreeSet` 仅提供包装类，可通过底层 encode/decode 手动编解码 |
 
 ---
 

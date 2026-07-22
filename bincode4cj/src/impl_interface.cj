@@ -101,7 +101,7 @@ extend NonZeroU8 <: Encode {
     }
 }
 extend NonZeroU8 <: Decode<NonZeroU8> {
-    public static func decode(data: Array<UInt8>, pos: Int64, _config: Config): MyResult<(NonZeroU8, Int64), DecodeError> {
+    public static func decode(data: Array<UInt8>, pos: Int64, _: Config): MyResult<(NonZeroU8, Int64), DecodeError> {
         match (decode_u8(data, pos)) {
             case MyResult.Ok((v, p)) =>
                 if (v == 0) { MyResult.Err(DecodeError.NonZeroTypeIsZero(IntegerType.U8)) }
@@ -161,7 +161,7 @@ extend NonZeroI8 <: Encode {
     }
 }
 extend NonZeroI8 <: Decode<NonZeroI8> {
-    public static func decode(data: Array<UInt8>, pos: Int64, _config: Config): MyResult<(NonZeroI8, Int64), DecodeError> {
+    public static func decode(data: Array<UInt8>, pos: Int64, _: Config): MyResult<(NonZeroI8, Int64), DecodeError> {
         match (decode_i8(data, pos)) {
             case MyResult.Ok((v, p)) =>
                 if (v == 0) { MyResult.Err(DecodeError.NonZeroTypeIsZero(IntegerType.I8)) }
@@ -392,13 +392,13 @@ extend<T> RwLock_<T> <: Decode<RwLock_<T>> where T <: Decode<T> {
 
 // === NonZeroU128 Encode/Decode ===
 extend NonZeroU128 <: Encode {
-    public func encode(_config: Config, buf: ArrayList<UInt8>): Unit {
-        varint_encode_u128(this.get(), buf)
+    public func encode(config: Config, buf: ArrayList<UInt8>): Unit {
+        varint_encode_u128(this.get(), config.endianness(), buf)
     }
 }
 extend NonZeroU128 <: Decode<NonZeroU128> {
-    public static func decode(data: Array<UInt8>, pos: Int64, _config: Config): MyResult<(NonZeroU128, Int64), DecodeError> {
-        match (varint_decode_u128(data, pos)) {
+    public static func decode(data: Array<UInt8>, pos: Int64, config: Config): MyResult<(NonZeroU128, Int64), DecodeError> {
+        match (varint_decode_u128(data, pos, config.endianness())) {
             case MyResult.Ok((v, p)) =>
                 if (v.lo == 0 && v.hi == 0) { MyResult.Err(DecodeError.NonZeroTypeIsZero(IntegerType.U128)) }
                 else { MyResult.Ok((NonZeroU128(v), p)) }
@@ -426,13 +426,55 @@ extend NonZeroUsize <: Decode<NonZeroUsize> {
 
 // === UInt128 Encode/Decode ===
 extend UInt128 <: Encode {
-    public func encode(_config: Config, buf: ArrayList<UInt8>): Unit {
-        varint_encode_u128(this, buf)
+    public func encode(config: Config, buf: ArrayList<UInt8>): Unit {
+        varint_encode_u128(this, config.endianness(), buf)
     }
 }
 extend UInt128 <: Decode<UInt128> {
-    public static func decode(data: Array<UInt8>, pos: Int64, _config: Config): MyResult<(UInt128, Int64), DecodeError> {
-        varint_decode_u128(data, pos)
+    public static func decode(data: Array<UInt8>, pos: Int64, config: Config): MyResult<(UInt128, Int64), DecodeError> {
+        varint_decode_u128(data, pos, config.endianness())
+    }
+}
+
+// === SystemTime_ Encode/Decode ===
+extend SystemTime_ <: Encode {
+    public func encode(config: Config, buf: ArrayList<UInt8>): Unit {
+        encode_u64(this.secs, config, buf)
+        encode_u32(this.nanos, config, buf)
+    }
+}
+extend SystemTime_ <: Decode<SystemTime_> {
+    public static func decode(data: Array<UInt8>, pos: Int64, config: Config): MyResult<(SystemTime_, Int64), DecodeError> {
+        match (decode_u64(data, pos, config)) {
+            case MyResult.Ok((secs, p1)) =>
+                match (decode_u32(data, p1, config)) {
+                    case MyResult.Ok((nanos, p2)) => MyResult.Ok((SystemTime_(secs, nanos), p2))
+                    case MyResult.Err(e) => MyResult.Err(e)
+                }
+            case MyResult.Err(e) => MyResult.Err(e)
+        }
+    }
+}
+
+// === Unit Encode/Decode ===
+extend Unit <: Encode {
+    public func encode(_: Config, _: ArrayList<UInt8>): Unit {}
+}
+extend Unit <: Decode<Unit> {
+    public static func decode(_: Array<UInt8>, _: Int64, _: Config): MyResult<(Unit, Int64), DecodeError> {
+        MyResult.Ok(((), 0))
+    }
+}
+
+// === Int128 Encode/Decode ===
+extend Int128 <: Encode {
+    public func encode(config: Config, buf: ArrayList<UInt8>): Unit {
+        varint_encode_i128(this, config.endianness(), buf)
+    }
+}
+extend Int128 <: Decode<Int128> {
+    public static func decode(data: Array<UInt8>, pos: Int64, config: Config): MyResult<(Int128, Int64), DecodeError> {
+        varint_decode_i128(data, pos, config.endianness())
     }
 }
 
@@ -452,10 +494,17 @@ extend BoxedStr <: Decode<BoxedStr> {
 }
 
 // === BoxedSlice<T> Encode/Decode ===
-// 注意：Decode 未实现，因仓颉泛型类型推断限制（decode_array 无法推断 T）
 extend<T> BoxedSlice<T> <: Encode where T <: Encode {
     public func encode(config: Config, buf: ArrayList<UInt8>): Unit {
         encode_array(this.get(), config, buf)
+    }
+}
+extend<T> BoxedSlice<T> <: Decode<BoxedSlice<T>> where T <: Decode<T> {
+    public static func decode(data: Array<UInt8>, pos: Int64, config: Config): MyResult<(BoxedSlice<T>, Int64), DecodeError> {
+        match (decode_array<T>(data, pos, config)) {
+            case MyResult.Ok((arr, p)) => MyResult.Ok((BoxedSlice<T>(arr), p))
+            case MyResult.Err(e) => MyResult.Err(e)
+        }
     }
 }
 
@@ -486,5 +535,109 @@ extend AtomicRefCountedStr <: Decode<AtomicRefCountedStr> {
             case MyResult.Ok((v, p)) => MyResult.Ok((AtomicRefCountedStr(v), p))
             case MyResult.Err(e) => MyResult.Err(e)
         }
+    }
+}
+
+// === NonZeroI128 Encode/Decode ===
+extend NonZeroI128 <: Encode {
+    public func encode(config: Config, buf: ArrayList<UInt8>): Unit {
+        varint_encode_i128(this.get(), config.endianness(), buf)
+    }
+}
+extend NonZeroI128 <: Decode<NonZeroI128> {
+    public static func decode(data: Array<UInt8>, pos: Int64, config: Config): MyResult<(NonZeroI128, Int64), DecodeError> {
+        match (varint_decode_i128(data, pos, config.endianness())) {
+            case MyResult.Ok((v, p)) =>
+                if (v.lo == 0 && v.hi == 0) { MyResult.Err(DecodeError.NonZeroTypeIsZero(IntegerType.I128)) }
+                else { MyResult.Ok((NonZeroI128(v), p)) }
+            case MyResult.Err(e) => MyResult.Err(e)
+        }
+    }
+}
+
+// === NonZeroIsize Encode/Decode ===
+extend NonZeroIsize <: Encode {
+    public func encode(config: Config, buf: ArrayList<UInt8>): Unit {
+        encode_i64(this.get(), config, buf)
+    }
+}
+extend NonZeroIsize <: Decode<NonZeroIsize> {
+    public static func decode(data: Array<UInt8>, pos: Int64, config: Config): MyResult<(NonZeroIsize, Int64), DecodeError> {
+        match (decode_i64(data, pos, config)) {
+            case MyResult.Ok((v, p)) =>
+                if (v == 0) { MyResult.Err(DecodeError.NonZeroTypeIsZero(IntegerType.Isize)) }
+                else { MyResult.Ok((NonZeroIsize(v), p)) }
+            case MyResult.Err(e) => MyResult.Err(e)
+        }
+    }
+}
+
+// === BinaryHeap<T> Encode/Decode ===
+extend<T> BinaryHeap<T> <: Encode where T <: Encode {
+    public func encode(config: Config, buf: ArrayList<UInt8>): Unit {
+        encode_arraylist(this.get_inner(), config, buf)
+    }
+}
+extend<T> BinaryHeap<T> <: Decode<BinaryHeap<T>> where T <: Decode<T> {
+    public static func decode(data: Array<UInt8>, pos: Int64, config: Config): MyResult<(BinaryHeap<T>, Int64), DecodeError> {
+        match (decode_arraylist<T>(data, pos, config)) {
+            case MyResult.Ok((arr, p)) => MyResult.Ok((BinaryHeap<T>(arr), p))
+            case MyResult.Err(e) => MyResult.Err(e)
+        }
+    }
+}
+
+// === VecDeque<T> Encode/Decode ===
+extend<T> VecDeque<T> <: Encode where T <: Encode {
+    public func encode(config: Config, buf: ArrayList<UInt8>): Unit {
+        encode_arraylist(this.get_inner(), config, buf)
+    }
+}
+extend<T> VecDeque<T> <: Decode<VecDeque<T>> where T <: Decode<T> {
+    public static func decode(data: Array<UInt8>, pos: Int64, config: Config): MyResult<(VecDeque<T>, Int64), DecodeError> {
+        match (decode_arraylist<T>(data, pos, config)) {
+            case MyResult.Ok((arr, p)) => MyResult.Ok((VecDeque<T>(arr), p))
+            case MyResult.Err(e) => MyResult.Err(e)
+        }
+    }
+}
+
+// === BTreeMap<K,V> Encode/Decode ===
+extend<K, V> BTreeMap<K, V> <: Encode where K <: Encode & Hashable & Equatable<K>, V <: Encode {
+    public func encode(config: Config, buf: ArrayList<UInt8>): Unit {
+        encode_hashmap(this.get_inner(), config, buf)
+    }
+}
+extend<K, V> BTreeMap<K, V> <: Decode<BTreeMap<K, V>> where K <: Decode<K> & Hashable & Equatable<K>, V <: Decode<V> {
+    public static func decode(data: Array<UInt8>, pos: Int64, config: Config): MyResult<(BTreeMap<K, V>, Int64), DecodeError> {
+        match (decode_hashmap<K, V>(data, pos, config)) {
+            case MyResult.Ok((m, p)) => MyResult.Ok((BTreeMap<K, V>(m), p))
+            case MyResult.Err(e) => MyResult.Err(e)
+        }
+    }
+}
+
+// === BTreeSet<T> Encode/Decode ===
+extend<T> BTreeSet<T> <: Encode where T <: Encode & Hashable & Equatable<T> {
+    public func encode(config: Config, buf: ArrayList<UInt8>): Unit {
+        encode_hashset(this.get_inner(), config, buf)
+    }
+}
+extend<T> BTreeSet<T> <: Decode<BTreeSet<T>> where T <: Decode<T> & Hashable & Equatable<T> {
+    public static func decode(data: Array<UInt8>, pos: Int64, config: Config): MyResult<(BTreeSet<T>, Int64), DecodeError> {
+        match (decode_hashset<T>(data, pos, config)) {
+            case MyResult.Ok((s, p)) => MyResult.Ok((BTreeSet<T>(s), p))
+            case MyResult.Err(e) => MyResult.Err(e)
+        }
+    }
+}
+
+// === PhantomData<T> Encode/Decode ===
+extend<T> PhantomData<T> <: Encode {
+    public func encode(_: Config, _: ArrayList<UInt8>): Unit {}
+}
+extend<T> PhantomData<T> <: Decode<PhantomData<T>> {
+    public static func decode(_: Array<UInt8>, pos: Int64, _: Config): MyResult<(PhantomData<T>, Int64), DecodeError> {
+        MyResult.Ok((PhantomData<T>(), pos))
     }
 }

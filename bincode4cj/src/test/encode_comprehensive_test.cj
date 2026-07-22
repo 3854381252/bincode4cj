@@ -183,7 +183,10 @@ public class EncodeComprehensiveTests {
 
     @TestCase
     public func test_encode_to_vec() {
-        let result = encode_to_vec(42u8, standard); @Expect(result.size > 0)
+        match (encode_to_vec(42u8, standard)) {
+            case MyResult.Ok(buf) => @Expect(buf.size > 0)
+            case _ => @Expect(false)
+        }
     }
 
     // === Tuples ===

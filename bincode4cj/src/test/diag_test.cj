@@ -2,7 +2,7 @@
 package bincode4cj.test
 import std.collection.*
 import std.unittest.*
-import bincode4cj.{ MyResult, DecodeError, read_u8, varint_decode_u32, varint_decode_u16, varint_decode_u64, varint_encode_u16, varint_encode_u32, varint_encode_u64, standard, encode_u16, encode_u32, encode_u64, decode_u16, decode_u32, decode_u64, u16_to_u8, i64_to_u64, encode_string, decode_string, bytes_to_string }
+import bincode4cj.{ MyResult, DecodeError, Endianness, read_u8, varint_decode_u32, varint_decode_u16, varint_decode_u64, varint_encode_u16, varint_encode_u32, varint_encode_u64, standard, encode_u16, encode_u32, encode_u64, decode_u16, decode_u32, decode_u64, u16_to_u8, i64_to_u64, encode_string, decode_string, bytes_to_string }
 
 // 直接复制的测试用函数，用于隔离问题
 @OverflowWrapping
@@ -48,7 +48,7 @@ public class DiagTests {
     @TestCase
     public func test_via_varint_decode() {
         let data: Array<UInt8> = [42u8]
-        match (varint_decode_u32(data, 0)) {
+        match (varint_decode_u32(data, 0, Endianness.Little)) {
             case MyResult.Ok((val, _)) => @Expect(val, 42u32)
             case _ => @Expect(false)
         }
@@ -147,7 +147,7 @@ public class DiagTests {
     @TestCase
     public func test_varint_encode_u16_diag() {
         let buf = ArrayList<UInt8>()
-        varint_encode_u16(1000u16, buf)
+        varint_encode_u16(1000u16, Endianness.Little, buf)
         @Expect(buf.size, 3)
         @Expect(buf[0], 251u8)
         @Expect(buf[1], 232u8)
@@ -158,7 +158,7 @@ public class DiagTests {
     @TestCase
     public func test_varint_decode_u16_diag() {
         let data: Array<UInt8> = [251u8, 232u8, 3u8]
-        match (varint_decode_u16(data, 0)) {
+        match (varint_decode_u16(data, 0, Endianness.Little)) {
             case MyResult.Ok((val, _)) => @Expect(val, 1000u16)
             case _ => @Expect(false)
         }
@@ -168,7 +168,7 @@ public class DiagTests {
     @TestCase
     public func test_varint_decode_u16_small_diag() {
         let data: Array<UInt8> = [42u8]
-        match (varint_decode_u16(data, 0)) {
+        match (varint_decode_u16(data, 0, Endianness.Little)) {
             case MyResult.Ok((val, _)) => @Expect(val, 42u16)
             case _ => @Expect(false)
         }
@@ -178,7 +178,7 @@ public class DiagTests {
     @TestCase
     public func test_varint_decode_u16_two_bytes_diag() {
         let data: Array<UInt8> = [251u8, 0x34u8, 0x12u8]
-        match (varint_decode_u16(data, 0)) {
+        match (varint_decode_u16(data, 0, Endianness.Little)) {
             case MyResult.Ok((val, _)) => @Expect(val, 0x1234u16)
             case _ => @Expect(false)
         }

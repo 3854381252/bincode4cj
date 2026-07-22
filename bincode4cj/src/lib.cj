@@ -3,21 +3,24 @@ package bincode4cj
 import std.collection.*
 import std.io.*
 
-public func encode_into_slice<E>(val: E, config: Config, buf: ArrayList<UInt8>): Unit where E <: Encode {
+public func encode_into_slice<E>(val: E, config: Config, buf: ArrayList<UInt8>): Int64 where E <: Encode {
     val.encode(config, buf)
+    buf.size
 }
 
-public func encode_into_writer<E>(val: E, config: Config, writer: VecWriter): Unit where E <: Encode {
+public func encode_into_writer<E>(val: E, config: Config, writer: VecWriter): Int64 where E <: Encode {
     val.encode(config, writer.collect())
+    writer.collect().size
 }
 
-public func encode_into_std_write<E>(val: E, config: Config, stream: OutputStream): Unit where E <: Encode {
+public func encode_into_std_write<E>(val: E, config: Config, stream: OutputStream): Int64 where E <: Encode {
     let buf = ArrayList<UInt8>()
     val.encode(config, buf)
     let writer = IoWriter(stream)
     let arr = buf.toArray()
     var i: Int64 = 0
     while (i < arr.size) { writer.write_byte(arr[i]); i += 1 }
+    arr.size
 }
 
 public func decode_from_slice<D>(data: Array<UInt8>, config: Config): MyResult<(D, Int64), DecodeError> where D <: Decode<D> {

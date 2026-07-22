@@ -1,0 +1,7 @@
+[package]
+name = "bincode4cj_derive"
+version = "0.1.0"
+description = "Derive macros for bincode4cj: @deriveEncode / @deriveDecode"
+cjc-version = "1.0.5"
+output-type = "static"
+compile-option = "--compile-macro"
