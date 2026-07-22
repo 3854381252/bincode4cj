@@ -325,4 +325,4 @@ cjcov -r . -o cov_output --html-details -s src/
 
 ---
 
-*更多详情请参阅 [设计文档](doc/design.md)、[API 参考](doc/feature_api.md) 和 [迁移覆盖率报告](doc/migration_coverage.md)。*
+*更多详情请参阅 [设计文档](doc/design.md)、[API 参考](doc/feature_api.md)、[迁移评估报告](doc/migration-assessment-report.md) 和 [迁移覆盖率报告](doc/migration_coverage.md)。*

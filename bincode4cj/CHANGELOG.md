@@ -5,7 +5,7 @@
 ### 新增
 - **派生宏包**：`bincode4cj-derive` 宏包，提供 `@deriveEncode` / `@deriveDecode`（支持 class struct 和 enum，含多参构造器）
 - **新增 13 个测试文件**：`derive_test`、`migration_test`、`branch_coverage_test`、`builtins_branch_test`、`collection_decode_test`、`coverage_test`、`decode_branch_test`、`tuple_branch_test`、`tuple_full_branch_test`、`varint_be_test`、`char_test`、`config_test`、`conv_test`
-- **迁移评估报告**：`rust->cangjie.md`，逐行验证 Rust ↔ 仓颉功能对应关系，迁移率 98.3%
+- **迁移评估报告**：`doc/migration-assessment-report.md`，逐行验证 Rust ↔ 仓颉功能对应关系，迁移率 98.3%
 - **cjcov 覆盖率报告**：`doc/cjcov/coverage_report.md`
 
 ### 改进
