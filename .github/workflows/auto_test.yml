@@ -13,21 +13,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Download and Extract Cangjie
-        run: |
-          wget -q -O cangjie.tar.gz -U "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
-            "https://cangjie-lang.cn/v1/files/auth/downLoad?nsId=142267&fileName=Cangjie-0.53.13-linux_x64.tar.gz&objectKey=6719f"
-          if [ ! -f cangjie.tar.gz ] || [ $(stat -c %s cangjie.tar.gz) -lt 1048576 ]; then
-            echo "❌ 错误：下载失败，文件大小异常！可能被 CSDN/Cangjie 反爬机制拦截，需要添加 Cookie。"
-            echo "💡 解决方案：请去仓库 Settings -> Secrets and variables -> Actions 添加名为 CANGJIE_COOKIE 的密钥，然后将上面的 wget 命令替换为："
-            echo '   wget -q -O cangjie.tar.gz --header "Cookie: ${{ secrets.CANGJIE_COOKIE }}" "https://cangjie-lang.cn/v1/files/auth/downLoad?nsId=142267&fileName=Cangjie-0.53.13-linux_x64.tar.gz&objectKey=6719f"'
-            exit 1
-          fi
-          tar -xzf cangjie.tar.gz
-
+      - name: Setup Cangjie
+        uses: Zxilly/setup-cangjie@v3
+        with:
+          channel: sts             
+          version: 0.53.13          
       - name: Test
         run: |
-          source cangjie/envsetup.sh
           cjc --version
           cd repo_workspace
           cjpm update
