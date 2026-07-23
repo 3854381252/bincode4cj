@@ -177,9 +177,17 @@ jobs:
         working-directory: bincode4cj
         run: |
           if command -v cjfmt &> /dev/null; then
-            # cjfmt 不支持 --check 长选项，改用 -c 短选项检查格式
-            cjfmt -c src/
-            echo "✅ Format check passed."
+            # cjfmt 无 --check 模式，先格式化再通过 git diff 检测变更
+            cjfmt -d src/
+            GIT_DIFF=$(git diff --stat 2>/dev/null || true)
+            if [ -n "$GIT_DIFF" ]; then
+              echo "❌ Format check failed — files need formatting:"
+              git diff --stat
+              git diff
+              exit 1
+            else
+              echo "✅ Format check passed."
+            fi
           else
             echo "⚠️ cjfmt not available, skipping format check."
           fi
