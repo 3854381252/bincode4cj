@@ -101,17 +101,18 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: |
           echo "Downloading Cangjie SDK for macOS..."
+          CANGJIE_HOME="${{ github.workspace }}/cangjie-sdk"
           curl -L -o cangjie-sdk.tar.gz "${{ matrix.sdk_url }}"
           echo "Verifying SHA256..."
           echo "${{ matrix.sdk_sha256 }}  cangjie-sdk.tar.gz" | shasum -a 256 -c -
-          echo "Extracting SDK..."
-          mkdir -p /opt/cangjie
-          tar -xzf cangjie-sdk.tar.gz -C /opt/cangjie --strip-components=1
+          echo "Extracting SDK to $CANGJIE_HOME..."
+          mkdir -p "$CANGJIE_HOME"
+          tar -xzf cangjie-sdk.tar.gz -C "$CANGJIE_HOME" --strip-components=1
           rm -f cangjie-sdk.tar.gz
-          echo "CANGJIE_HOME=/opt/cangjie" >> $GITHUB_ENV
-          echo "/opt/cangjie/bin" >> $GITHUB_PATH
-          echo "/opt/cangjie/tools/bin" >> $GITHUB_PATH
-          echo "SDK setup complete."
+          echo "CANGJIE_HOME=$CANGJIE_HOME" >> $GITHUB_ENV
+          echo "$CANGJIE_HOME/bin" >> $GITHUB_PATH
+          echo "$CANGJIE_HOME/tools/bin" >> $GITHUB_PATH
+          echo "SDK setup complete at $CANGJIE_HOME"
 
       # ---------- Linux (Docker): 确认环境 ----------
       - name: "Verify Toolchain"
