@@ -204,52 +204,7 @@ jobs:
           fi
 
   # ===========================================================================
-  # Job 3: Coverage — 仅手动触发时运行
-  # ===========================================================================
-  coverage:
-    name: "Coverage Report"
-    runs-on: ubuntu-latest
-    container: zxilly/cangjie:1.0.5
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_coverage }}
-
-    steps:
-      - name: "Checkout"
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-
-      - name: "Build with Coverage"
-        shell: bash
-        working-directory: bincode4cj
-        run: |
-          cjpm build --coverage
-
-      - name: "Run Tests with Coverage"
-        shell: bash
-        working-directory: bincode4cj
-        run: |
-          cjpm test --coverage
-
-      - name: "Generate Coverage Report"
-        shell: bash
-        working-directory: bincode4cj
-        run: |
-          if command -v cjcov &> /dev/null; then
-            cjcov -r . -o cov_output --html-details -s src/
-            echo "Coverage report generated at: cov_output/"
-          else
-            echo "⚠️ cjcov not available, skipping coverage report generation."
-          fi
-
-      - name: "Upload Coverage Report"
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-report
-          path: bincode4cj/cov_output/
-          retention-days: 14
-
-  # ===========================================================================
-  # Job 4: Summary — 汇总状态
+  # Job 3: Summary — 汇总状态
   # ===========================================================================
   summary:
     name: "Pipeline Summary"
