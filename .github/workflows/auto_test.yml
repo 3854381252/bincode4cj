@@ -7,7 +7,7 @@ on:
     branches: [ "master" ]
 jobs:
   test:
-    runs-on: euleros-2.10.1 
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
