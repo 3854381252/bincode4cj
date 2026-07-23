@@ -1,27 +1,312 @@
-name: Auto Test
+# =============================================================================
+# bincode4cj CI Pipeline
+# =============================================================================
+#
+# 触发条件:
+#   - push 到 main 分支
+#   - 任何 PR (含来自 fork 的 PR)
+#   - 手动触发 (workflow_dispatch)
+#
+# 环境:
+#   - Cangjie 1.0.5 SDK (LTS)
+#   - macOS (darwin_aarch64) / Linux (x86_64) 双平台
+#
+# 步骤:
+#   1. Setup Cangjie SDK
+#   2. Build (cjpm build)
+#   3. Test (cjpm test)
+#   4. Lint / Format Check (cjfmt --check)
+#   5. Coverage (可选，手动触发时)
+# =============================================================================
+
+name: CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "doc/**"
+      - ".gitignore"
+      - "LICENSE*"
   pull_request:
-    branches: [ "master" ]
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "doc/**"
+      - ".gitignore"
+      - "LICENSE*"
+  workflow_dispatch:
+    inputs:
+      run_coverage:
+        description: "Run coverage report"
+        type: boolean
+        default: false
+      cangjie_sdk_url:
+        description: "Custom Cangjie SDK download URL"
+        required: false
+        type: string
+
+# 并发控制：同一分支同一组只运行一个流水线，新的会取消旧的
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CANGJIE_VERSION: "1.0.5"
+  CANGJIE_HOME: ${{ github.workspace }}/cangjie-sdk
+  PROJECT_DIR: bincode4cj
+  # 默认 SDK 下载地址（可被 workflow_dispatch 覆盖）
+  CANGJIE_SDK_URL: "https://github.com/Cangjie-Community/cangjie-sdk/releases/download/v1.0.5/cangjie-1.0.5-darwin-aarch64.tar.gz"
+
+defaults:
+  run:
+    working-directory: ${{ env.PROJECT_DIR }}
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
 
-      - name: Setup Cangjie
-        uses: Zxilly/setup-cangjie@v3
+  # ===========================================================================
+  # Job 1: Build & Test — 核心构建和测试
+  # ===========================================================================
+  build-and-test:
+    name: "Build & Test (${{ matrix.os }})"
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            arch: aarch64
+            sdk_url: "https://github.com/Cangjie-Community/cangjie-sdk/releases/download/v1.0.5/cangjie-1.0.5-darwin-aarch64.tar.gz"
+          - os: ubuntu-latest
+            arch: x86_64
+            sdk_url: "https://github.com/Cangjie-Community/cangjie-sdk/releases/download/v1.0.5/cangjie-1.0.5-linux-x86_64.tar.gz"
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: "Checkout"
+        uses: actions/checkout@v4
         with:
-          channel: sts             
-          version: 0.53.13          
-      - name: Test
+          fetch-depth: 1
+
+      - name: "Cache Cangjie SDK"
+        id: cache-sdk
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CANGJIE_HOME }}
+          key: cangjie-sdk-${{ env.CANGJIE_VERSION }}-${{ matrix.arch }}-${{ hashFiles('.github/workflows/ci.yml') }}
+          restore-keys: |
+            cangjie-sdk-${{ env.CANGJIE_VERSION }}-${{ matrix.arch }}-
+
+      - name: "Setup Cangjie SDK"
+        if: steps.cache-sdk.outputs.cache-hit != 'true'
+        shell: bash
+        working-directory: ${{ github.workspace }}
         run: |
-          cjc --version
-          cd repo_workspace
-          cjpm update
+          SDK_URL="${{ matrix.sdk_url }}"
+          echo "Downloading Cangjie SDK from: $SDK_URL"
+          curl -L -o cangjie-sdk.tar.gz "$SDK_URL"
+          echo "Extracting Cangjie SDK..."
+          mkdir -p "${{ env.CANGJIE_HOME }}"
+          tar -xzf cangjie-sdk.tar.gz -C "${{ env.CANGJIE_HOME }}" --strip-components=1
+          rm -f cangjie-sdk.tar.gz
+          echo "Cangjie SDK installed at: ${{ env.CANGJIE_HOME }}"
+
+      - name: "Setup Environment"
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        run: |
+          if [ -f "${{ env.CANGJIE_HOME }}/envsetup.sh" ]; then
+            source "${{ env.CANGJIE_HOME }}/envsetup.sh"
+            echo "CANGJIE_HOME=${{ env.CANGJIE_HOME }}" >> $GITHUB_ENV
+            echo "${{ env.CANGJIE_HOME }}/bin" >> $GITHUB_PATH
+            echo "Env setup complete."
+          else
+            echo "Warning: envsetup.sh not found, checking bin/ directly..."
+            if [ -d "${{ env.CANGJIE_HOME }}/bin" ]; then
+              echo "${{ env.CANGJIE_HOME }}/bin" >> $GITHUB_PATH
+            fi
+          fi
+
+      - name: "Verify Cangjie Toolchain"
+        shell: bash
+        run: |
+          cjc --version 2>/dev/null || echo "cjc version check failed"
+          cjpm --version 2>/dev/null || echo "cjpm version check failed"
+
+      - name: "Build"
+        shell: bash
+        run: |
+          source "${{ env.CANGJIE_HOME }}/envsetup.sh" 2>/dev/null || true
           cjpm build
+        env:
+          CANGJIE_HOME: ${{ env.CANGJIE_HOME }}
+
+      - name: "Run Tests"
+        shell: bash
+        run: |
+          source "${{ env.CANGJIE_HOME }}/envsetup.sh" 2>/dev/null || true
           cjpm test
+        env:
+          CANGJIE_HOME: ${{ env.CANGJIE_HOME }}
+
+  # ===========================================================================
+  # Job 2: Lint / Format — 代码风格检查
+  # ===========================================================================
+  lint:
+    name: "Lint & Format Check"
+    runs-on: macos-latest
+    needs: [build-and-test]
+
+    steps:
+      - name: "Checkout"
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: "Restore Cangjie SDK (from cache)"
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CANGJIE_HOME }}
+          key: cangjie-sdk-${{ env.CANGJIE_VERSION }}-aarch64-${{ hashFiles('.github/workflows/ci.yml') }}
+          restore-keys: |
+            cangjie-sdk-${{ env.CANGJIE_VERSION }}-aarch64-
+
+      - name: "Setup Environment"
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        run: |
+          if [ -f "${{ env.CANGJIE_HOME }}/envsetup.sh" ]; then
+            source "${{ env.CANGJIE_HOME }}/envsetup.sh"
+            echo "${{ env.CANGJIE_HOME }}/bin" >> $GITHUB_PATH
+          elif [ -d "${{ env.CANGJIE_HOME }}/bin" ]; then
+            echo "${{ env.CANGJIE_HOME }}/bin" >> $GITHUB_PATH
+          fi
+
+      - name: "Check Formatting (cjfmt --check)"
+        shell: bash
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          source "${{ env.CANGJIE_HOME }}/envsetup.sh" 2>/dev/null || true
+          if command -v cjfmt &> /dev/null; then
+            cjfmt --check src/
+            echo "Format check passed."
+          else
+            echo "cjfmt not available, skipping format check."
+          fi
+        env:
+          CANGJIE_HOME: ${{ env.CANGJIE_HOME }}
+
+      - name: "Lint (cjlint)"
+        shell: bash
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          source "${{ env.CANGJIE_HOME }}/envsetup.sh" 2>/dev/null || true
+          if command -v cjlint &> /dev/null; then
+            cjlint src/ --warnings-as-errors 2>&1 || echo "Lint warnings found (non-blocking)"
+          else
+            echo "cjlint not available, skipping lint."
+          fi
+        continue-on-error: true
+        env:
+          CANGJIE_HOME: ${{ env.CANGJIE_HOME }}
+
+  # ===========================================================================
+  # Job 3: Coverage — 覆盖率报告（仅手动触发时运行）
+  # ===========================================================================
+  coverage:
+    name: "Coverage Report"
+    runs-on: macos-latest
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_coverage }}
+
+    steps:
+      - name: "Checkout"
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: "Restore Cangjie SDK (from cache)"
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CANGJIE_HOME }}
+          key: cangjie-sdk-${{ env.CANGJIE_VERSION }}-aarch64-${{ hashFiles('.github/workflows/ci.yml') }}
+          restore-keys: |
+            cangjie-sdk-${{ env.CANGJIE_VERSION }}-aarch64-
+
+      - name: "Setup Environment"
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        run: |
+          if [ -f "${{ env.CANGJIE_HOME }}/envsetup.sh" ]; then
+            source "${{ env.CANGJIE_HOME }}/envsetup.sh"
+            echo "${{ env.CANGJIE_HOME }}/bin" >> $GITHUB_PATH
+          elif [ -d "${{ env.CANGJIE_HOME }}/bin" ]; then
+            echo "${{ env.CANGJIE_HOME }}/bin" >> $GITHUB_PATH
+          fi
+
+      - name: "Build with Coverage"
+        shell: bash
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          source "${{ env.CANGJIE_HOME }}/envsetup.sh" 2>/dev/null || true
+          cjpm build --coverage
+        env:
+          CANGJIE_HOME: ${{ env.CANGJIE_HOME }}
+
+      - name: "Run Tests with Coverage"
+        shell: bash
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          source "${{ env.CANGJIE_HOME }}/envsetup.sh" 2>/dev/null || true
+          cjpm test --coverage
+        env:
+          CANGJIE_HOME: ${{ env.CANGJIE_HOME }}
+
+      - name: "Generate Coverage Report"
+        shell: bash
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          source "${{ env.CANGJIE_HOME }}/envsetup.sh" 2>/dev/null || true
+          if command -v cjcov &> /dev/null; then
+            cjcov -r . -o cov_output --html-details -s src/
+            echo "Coverage report generated at: cov_output/"
+          else
+            echo "cjcov not available, skipping coverage report generation."
+          fi
+        env:
+          CANGJIE_HOME: ${{ env.CANGJIE_HOME }}
+
+      - name: "Upload Coverage Report"
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: ${{ env.PROJECT_DIR }}/cov_output/
+          retention-days: 14
+
+  # ===========================================================================
+  # Job 4: Status Badge — 汇总状态
+  # ===========================================================================
+  summary:
+    name: "Pipeline Summary"
+    runs-on: ubuntu-latest
+    needs: [build-and-test, lint]
+    if: ${{ always() }}
+
+    steps:
+      - name: "Check Results"
+        shell: bash
+        run: |
+          BUILD_STATUS="${{ needs.build-and-test.result }}"
+          LINT_STATUS="${{ needs.lint.result }}"
+          echo "## Pipeline Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Build & Test | $BUILD_STATUS |" >> $GITHUB_STEP_SUMMARY
+          echo "| Lint & Format | $LINT_STATUS |" >> $GITHUB_STEP_SUMMARY
+          if [ "$BUILD_STATUS" = "success" ] && [ "$LINT_STATUS" = "success" ]; then
+            echo "✅ **All checks passed!**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Some checks failed.**" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
