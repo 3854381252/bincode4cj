@@ -5,23 +5,16 @@ on:
     branches: [ "main" ]
   pull_request:
     branches: [ "master" ]
-
 jobs:
   test:
-
     runs-on: euleros-2.10.1 
     steps:
- 
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      
       - name: Download and Extract Cangjie
         run: |
           wget -O cangjie.tar.gz "https://cangjie-lang.cn/v1/files/auth/downLoad?nsId=142267&fileName=Cangjie-0.53.13-linux_x64.tar.gzaobjectKey=6719f"
           tar -xzf cangjie.tar.gz
-
-     
       - name: Test
         run: |
           source cangjie/envsetup.sh
