@@ -78,8 +78,10 @@ jobs:
             sdk_sha256: ""
 
           # ---------- macOS: 直接下载 SDK ----------
+          # 注意: 使用 macos-15 而非 macos-latest/macos-16,
+          # 因为 Cangjie SDK 1.0.5 的 ld64.lld 与 Xcode 26.5+ SDK 不兼容
           - name: macOS-aarch64
-            os: macos-latest
+            os: macos-15
             target: darwin_aarch64_cjnative
             container: null
             sdk_url: "https://cangjie-lang.cn/v1/files/auth/downLoad?nsId=142267&fileName=cangjie-sdk-mac-aarch64-1.0.5.tar.gz&objectKey=698acea5bd66ae22b62330ae"
