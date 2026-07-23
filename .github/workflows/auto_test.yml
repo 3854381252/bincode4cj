@@ -172,12 +172,13 @@ jobs:
           echo "cjfmt: $(cjfmt --version 2>/dev/null || echo 'N/A')"
           echo "cjlint: $(cjlint --version 2>/dev/null || echo 'N/A')"
 
-      - name: "Check Formatting (cjfmt --check)"
+      - name: "Check Formatting"
         shell: bash
         working-directory: bincode4cj
         run: |
           if command -v cjfmt &> /dev/null; then
-            cjfmt --check src/
+            # cjfmt 不支持 --check 长选项，改用 -c 短选项检查格式
+            cjfmt -c src/
             echo "✅ Format check passed."
           else
             echo "⚠️ cjfmt not available, skipping format check."
@@ -247,6 +248,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: [build-and-test, lint]
     if: ${{ always() }}
+    defaults:
+      run:
+        working-directory: ${{ github.workspace }}
 
     steps:
       - name: "Check Results"
